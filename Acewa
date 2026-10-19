@@ -1,0 +1,247 @@
+local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+
+-- ==================== บริการและตัวแปรหลัก ====================
+local PathfindingService = game:GetService("PathfindingService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local VirtualUser = game:GetService("VirtualUser")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local rootPart = character:WaitForChild("HumanoidRootPart")
+local playerGui = player:WaitForChild("PlayerGui")
+
+local isAutoFarmActive = false -- สถานะเปิด/ปิด ฟาร์มออโต้
+local noclipConnection = nil
+
+-- Anti-AFK ป้องกันการโดนเตะ
+player.Idled:Connect(function()
+	if isAutoFarmActive then
+		VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+		task.wait(1)
+		VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+	end
+end)
+
+-- ฟังก์ชัน Noclip เดินทะลุเสา
+local function enableNoclip()
+	if not noclipConnection then
+		noclipConnection = RunService.Stepped:Connect(function()
+			if character and isAutoFarmActive then
+				for _, part in ipairs(character:GetChildren()) do
+					if part:IsA("BasePart") then
+						part.CanCollide = false
+					end
+				end
+			end
+		end)
+	end
+end
+
+local function disableNoclip()
+	if noclipConnection then
+		noclipConnection:Disconnect()
+		noclipConnection = nil
+	end
+end
+
+-- ฟังก์ชันเดินไปยังตำแหน่งเป้าหมาย
+local function walkToPosition(targetPosition)
+	enableNoclip()
+
+	local path = PathfindingService:CreatePath({
+		AgentRadius = 4,
+		AgentHeight = 5,
+		AgentCanJump = true
+	})
+
+	local success, err = pcall(function()
+		path:ComputeAsync(rootPart.Position, targetPosition)
+	end)
+
+	if success and path.Status == Enum.PathStatus.Success then
+		for _, waypoint in ipairs(path:GetWaypoints()) do
+			if not isAutoFarmActive then break end
+			if waypoint.Action == Enum.PathWaypointAction.Jump then
+				humanoid.Jump = true
+			end
+			humanoid:MoveTo(waypoint.Position)
+			local reached = humanoid.MoveToFinished:Wait(8)
+			if not reached then break end
+		end
+	else
+		humanoid:MoveTo(targetPosition)
+	end
+
+	disableNoclip()
+end
+
+-- ฟังก์ชันค้นหาจุด welding steel (ตัด NPC ออก)
+local function getWeldingPrompt()
+	local closestPrompt = nil
+	local shortestDistance = math.huge
+
+	for _, prompt in ipairs(workspace:GetDescendants()) do
+		if prompt:IsA("ProximityPrompt") and prompt.Enabled then
+			local isNPC = prompt:FindFirstAncestorOfClass("Model") and prompt:FindFirstAncestorOfClass("Model"):FindFirstChildOfClass("Humanoid")
+			
+			if not isNPC then
+				local actionText = prompt.ActionText:lower()
+				local objectText = prompt.ObjectText:lower()
+
+				if string.find(actionText, "welding") or string.find(actionText, "steel") or string.find(actionText, "construct") or
+				   string.find(objectText, "welding") or string.find(objectText, "steel") or string.find(objectText, "construct") then
+					
+					local parent = prompt.Parent
+					local promptWorldPos = nil
+
+					if parent:IsA("BasePart") then
+						promptWorldPos = parent.Position
+					elseif parent:IsA("Attachment") then
+						promptWorldPos = parent.WorldPosition
+					elseif parent:IsA("Model") and parent.PrimaryPart then
+						promptWorldPos = parent.PrimaryPart.Position
+					end
+
+					if promptWorldPos then
+						local distance = (rootPart.Position - promptWorldPos).Magnitude
+						if distance < shortestDistance then
+							shortestDistance = distance
+							closestPrompt = {
+								Prompt = prompt,
+								Position = promptWorldPos
+							}
+						end
+					end
+				end
+			end
+		end
+	end
+
+	return closestPrompt
+end
+
+-- ฟังก์ชันกด UI มินิเกมค้างไว้
+local function holdCurrentUI(holdSeconds)
+	for _, button in ipairs(playerGui:GetDescendants()) do
+		if (button:IsA("ImageButton") or button:IsA("TextButton")) and button.Visible then
+			local pos = button.AbsolutePosition + (button.AbsoluteSize / 2)
+			
+			VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 0)
+			
+			-- แบ่งเวลารอเป็นช่วงๆ เพื่อเช็คว่าผู้ใช้กดปิด Toggle หรือไม่
+			local elapsed = 0
+			while elapsed < holdSeconds and isAutoFarmActive do
+				task.wait(0.5)
+				elapsed = elapsed + 0.5
+			end
+			
+			VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 0)
+			return true
+		end
+	end
+	return false
+end
+
+-- ฟังก์ชันลูปหลัก Auto Farm
+local function startAutoFarmLoop()
+	task.spawn(function()
+		while isAutoFarmActive do
+			character = player.Character or player.CharacterAdded:Wait()
+			humanoid = character:WaitForChild("Humanoid")
+			rootPart = character:WaitForChild("HumanoidRootPart")
+
+			local target = getWeldingPrompt()
+
+			if target and isAutoFarmActive then
+				-- 1. เดินไปหาตำแหน่ง
+				walkToPosition(target.Position)
+				if not isAutoFarmActive then break end
+				task.wait(0.5)
+
+				-- 2. กด E
+				if fireproximityprompt then
+					fireproximityprompt(target.Prompt)
+				else
+					VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+					task.wait(0.1)
+					VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+				end
+
+				-- 3. รอนาน 15 วินาที (แบ่งรอเพื่อหยุดได้ทันทีถ้าปิด Toggle)
+				local waitTime = 0
+				while waitTime < 15 and isAutoFarmActive do
+					task.wait(0.5)
+					waitTime = waitTime + 0.5
+				end
+
+				-- 4. กด UI ค้างไว้ 11 วินาที
+				if isAutoFarmActive then
+					holdCurrentUI(11)
+				end
+
+				task.wait(2)
+			else
+				task.wait(3)
+			end
+		end
+		disableNoclip()
+	end)
+end
+
+-- ==================== การสร้าง UI Window ====================
+local Window = WindUI:CreateWindow({
+	Title = "SON HUB",
+	Icon = "compass",
+	Author = "son studio",
+})
+
+local Tab = Window:Tab({
+	Title = "หลัก",
+	Icon = "house",
+	Locked = false,
+})
+
+
+
+
+
+-- Toggle สวิตช์ เปิด/ปิด ฟาร์มเชื่อมเหล็กอัตโนมัติ
+local Toggle = Tab:Toggle({
+	Title = "เชื่อมเหล็กอัตโนมัต",
+	Desc = "เดินไปจุดเชื่อมเหล็กและเชื่อมเหล็กเอง",
+	Icon = "hammer",
+	Type = "Checkbox",
+	Value = false,
+	Callback = function(state) 
+		isAutoFarmActive = state
+		if isAutoFarmActive then
+			startAutoFarmLoop()
+		else
+			disableNoclip()
+		end
+	end
+})
+
+
+
+
+
+
+
+
+Window:EditOpenButton({
+    Title = "SON HUB",
+    Icon = "monitor",
+    CornerRadius = UDim.new(0,16),
+    StrokeThickness = 2,
+    Color = ColorSequence.new( -- gradient
+        Color3.fromHex("FF0F7B"), 
+        Color3.fromHex("F89B29")
+    ),
+    OnlyMobile = false,
+    Enabled = true,
+    Draggable = true,
+})
