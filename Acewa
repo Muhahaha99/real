@@ -204,7 +204,84 @@ local Tab = Window:Tab({
 	Locked = false,
 })
 
+local Button = Tab:Button({
+    Title = "ไปก่อสร้าง",
+    Desc = "",
+    Locked = false,
+    Callback = function()
+        local PathfindingService = game:GetService("PathfindingService")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
 
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local rootPart = character:WaitForChild("HumanoidRootPart")
+
+-- พิกัดเป้าหมายที่กำหนด
+local targetPosition = Vector3.new(2388.562744140625, 3.158936023712158, -373.7071838378906)
+
+local noclipConnection = nil
+
+-- เปิดโหมดเดินทะลุสิ่งกีดขวางชั่วคราว
+local function enableNoclip()
+	if not noclipConnection then
+		noclipConnection = RunService.Stepped:Connect(function()
+			if character then
+				for _, part in ipairs(character:GetChildren()) do
+					if part:IsA("BasePart") then
+						part.CanCollide = false
+					end
+				end
+			end
+		end)
+	end
+end
+
+-- ปิดโหมดเดินทะลุ
+local function disableNoclip()
+	if noclipConnection then
+		noclipConnection:Disconnect()
+		noclipConnection = nil
+	end
+end
+
+-- ฟังก์ชันสั่งให้เดินไปยังพิกัดเป้าหมาย
+local function moveToTargetPos(destination)
+	enableNoclip()
+
+	local path = PathfindingService:CreatePath({
+		AgentRadius = 3,
+		AgentHeight = 5,
+		AgentCanJump = true
+	})
+
+	local success, err = pcall(function()
+		path:ComputeAsync(rootPart.Position, destination)
+	end)
+
+	if success and path.Status == Enum.PathStatus.Success then
+		for _, waypoint in ipairs(path:GetWaypoints()) do
+			if waypoint.Action == Enum.PathWaypointAction.Jump then
+				humanoid.Jump = true
+			end
+			humanoid:MoveTo(waypoint.Position)
+			local reached = humanoid.MoveToFinished:Wait(8)
+			if not reached then break end
+		end
+	else
+		-- กรณี Pathfinding คำนวณไม่ผ่าน ให้สั่งเดินตรงไปยังตำแหน่งเป้าหมาย
+		humanoid:MoveTo(destination)
+		humanoid.MoveToFinished:Wait(8)
+	end
+
+	disableNoclip()
+end
+
+-- เรียกใช้งานฟังก์ชันเดิน
+moveToTargetPos(targetPosition)
+    end
+})
 
 
 
