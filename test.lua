@@ -59,8 +59,9 @@ local Settings = {
 	-- ตั้งค่า Crosshair เป้าแดง
 	ShowCrosshairDot = true,
 	
-	-- ตั้งค่า ESP Name
+	-- ตั้งค่า ESP Name & Highlight
 	ESPNameEnabled = false,
+	ESPHighlightEnabled = false,
 }
 
 local aimbotToggleKey = Enum.KeyCode.E -- ปุ่มคีย์ลัดเปิด/ปิด Aimbot บนคีย์บอร์ด
@@ -441,8 +442,9 @@ local function startAutoSweepLoop()
 	end)
 end
 
--- ==================== ระบบ ESP ชื่อตามสีทีม (ปรับความสูงขึ้น) ====================
+-- ==================== ระบบ ESP ชื่อ & Highlight แยกสีทีม ====================
 local espElements = {}
+local highlightElements = {}
 
 local function createESP(p)
 	local nameTag = Drawing.new("Text")
@@ -460,6 +462,10 @@ local function removeESP(p)
 		espElements[p]:Remove()
 		espElements[p] = nil
 	end
+	if highlightElements[p] then
+		highlightElements[p]:Destroy()
+		highlightElements[p] = nil
+	end
 end
 
 for _, p in ipairs(Players:GetPlayers()) do
@@ -475,39 +481,72 @@ Players.PlayerRemoving:Connect(function(p)
 end)
 
 RunService.RenderStepped:Connect(function()
-	for p, nameTag in pairs(espElements) do
-		if Settings.ESPNameEnabled and p.Character and p.Character:FindFirstChild("Head") and p.Character:FindFirstChildOfClass("Humanoid") then
-			local head = p.Character.Head
-			local hum = p.Character:FindFirstChildOfClass("Humanoid")
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= player then
+			local teamColor = Color3.fromRGB(255, 255, 255)
+			if p.TeamColor then
+				local rawColor = p.TeamColor.Color
+				if rawColor.B > 0.4 and rawColor.R < 0.5 then
+					teamColor = Color3.fromRGB(120, 200, 255)
+				else
+					teamColor = rawColor
+				end
+			end
 
-			if hum.Health > 0 then
-				-- ปรับบวกแกน Y เพิ่มขึ้นจากเดิม (เช่น จาก 1.5 เป็น 2.5 หรือ 3.0) เพื่อให้ชื่อลอยสูงขึ้นเหนือหัว
-				local headPos, onScreen = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 2.8, 0))
+			-- อัปเดต ESP ชื่อ
+			local nameTag = espElements[p]
+			if nameTag then
+				if Settings.ESPNameEnabled and p.Character and p.Character:FindFirstChild("Head") and p.Character:FindFirstChildOfClass("Humanoid") then
+					local head = p.Character.Head
+					local hum = p.Character:FindFirstChildOfClass("Humanoid")
 
-				if onScreen then
-					nameTag.Position = Vector2.new(headPos.X, headPos.Y)
-					nameTag.Text = p.DisplayName or p.Name
-					
-					if p.TeamColor then
-						local rawColor = p.TeamColor.Color
-						if rawColor.B > 0.4 and rawColor.R < 0.5 then
-							nameTag.Color = Color3.fromRGB(120, 200, 255)
+					if hum.Health > 0 then
+						local headPos, onScreen = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 2.8, 0))
+
+						if onScreen then
+							nameTag.Position = Vector2.new(headPos.X, headPos.Y)
+							nameTag.Text = p.DisplayName or p.Name
+							nameTag.Color = teamColor
+							nameTag.Visible = true
 						else
-							nameTag.Color = rawColor
+							nameTag.Visible = false
 						end
 					else
-						nameTag.Color = Color3.fromRGB(255, 255, 255)
+						nameTag.Visible = false
 					end
-					
-					nameTag.Visible = true
 				else
 					nameTag.Visible = false
 				end
-			else
-				nameTag.Visible = false
 			end
-		else
-			nameTag.Visible = false
+
+			-- อัปเดต ESP Highlight ตามสีทีม
+			if Settings.ESPHighlightEnabled and p.Character and p.Character:FindFirstChildOfClass("Humanoid") then
+				local hum = p.Character:FindFirstChildOfClass("Humanoid")
+				if hum.Health > 0 then
+					local hl = highlightElements[p]
+					if not hl or hl.Parent ~= p.Character then
+						if hl then hl:Destroy() end
+						hl = Instance.new("Highlight")
+						hl.Name = "SonHub_Highlight"
+						hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+						hl.FillTransparency = 0.5
+						hl.OutlineTransparency = 0
+						hl.Parent = p.Character
+						highlightElements[p] = hl
+					end
+					hl.FillColor = teamColor
+					hl.OutlineColor = teamColor
+					hl.Enabled = true
+				else
+					if highlightElements[p] then
+						highlightElements[p].Enabled = false
+					end
+				end
+			else
+				if highlightElements[p] then
+					highlightElements[p].Enabled = false
+				end
+			end
 		end
 	end
 end)
@@ -743,6 +782,17 @@ CombatTab:Toggle({
 	Value = Settings.ESPNameEnabled,
 	Callback = function(state)
 		Settings.ESPNameEnabled = state
+	end
+})
+
+CombatTab:Toggle({
+	Title = "ESP Highlight ตามสีทีม",
+	Desc = "เรืองแสงตัวละครผู้เล่นทุกคนทะลุกำแพงตามสีทีม",
+	Icon = "eye",
+	Type = "Checkbox",
+	Value = Settings.ESPHighlightEnabled,
+	Callback = function(state)
+		Settings.ESPHighlightEnabled = state
 	end
 })
 
