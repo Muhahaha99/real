@@ -389,7 +389,7 @@ local function startAutoSweepLoop()
 			humanoid = character:WaitForChild("Humanoid")
 			rootPart = character:WaitForChild("HumanoidRootPart")
 
-			val target = getSweepFloorPrompt()
+			local target = getSweepFloorPrompt()
 
 			if target and isAutoSweepActive then
 				runToPosition(target.Position, function() return isAutoSweepActive end)
