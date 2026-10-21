@@ -1,5 +1,30 @@
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 
+
+
+
+local Window = WindUI:CreateWindow({
+    Title = "SON HUB",
+    Icon = "user",
+    Author = "son studio",
+    Folder = "keyse",
+    
+    -- ส่วนของ Key System
+    KeySystem = {    
+        Note = "กรุณาใส่คีย์เพื่อใช้งาน)", -- ข้อความแนะนำที่จะแสดงให้ผู้ใช้เห็น
+        SaveKey = true, -- (แนะนำให้ใส่เพิ่ม) บันทึกคีย์อัตโนมัติ ไม่ต้องกรอกใหม่ทุกครั้งที่เข้าเกม
+        API = {
+            { 
+                Type = "platoboost",                                
+                ServiceId = 35489, -- service id
+                Secret = "4d904262-f21d-48d4-a65d-3f233856b7b8", -- platoboost secret
+            },                                                              
+        },                                                              
+    },
+})
+
+
+
 -- ==================== บริการและตัวแปรหลัก ====================
 local PathfindingService = game:GetService("PathfindingService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
@@ -637,27 +662,14 @@ aimbotButton.MouseButton1Click:Connect(function()
 	end
 end)
 
-local Window = WindUI:CreateWindow({
-    -- ...
-    Folder = "MyScriptFolder", -- <--- เพิ่มบรรทัดนี้เข้าไป (เปลี่ยนชื่อเป็นอะไรก็ได้ที่เป็นตัวอักษรภาษาอังกฤษ)
-    KeySystem = {                                                   
-        Note = "Example Key System. With platoboost.",              
-        API = {                                                     
-            { -- PlatoBoost
-                Type = "platoboost",                                
-                ServiceId = 35489, -- service id
-                Secret = "4d904262-f21d-48d4-a65d-3f233856b7b8", -- platoboost secret
-            },                                                      
-        },                                                          
-    },                                                              
-})
 
--- ==================== การสร้าง UI Window (WindUI) ====================
-local Window = WindUI:CreateWindow({
-	Title = "SON HUB",
-	Icon = "compass",
-	Author = "son studio",
-})
+
+-- -- ==================== การสร้าง UI Window (WindUI) ====================
+-- local Window = WindUI:CreateWindow({
+-- 	Title = "SON HUB",
+-- 	Icon = "compass",
+-- 	Author = "son studio",
+-- })
 
 
 
@@ -888,3 +900,4 @@ Window:EditOpenButton({
 	Enabled = true,
 	Draggable = true,
 })
+
