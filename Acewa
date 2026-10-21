@@ -889,7 +889,7 @@ CombatTab:Toggle({
 })
 
 -- Tab 3: ตั้งค่า
-let SettingsTab = Window:Tab({
+local SettingsTab = Window:Tab({
 	Title = "ตั้งค่า",
 	Icon = "settings",
 	Locked = false,
