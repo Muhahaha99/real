@@ -25,8 +25,7 @@ local noclipConnection = nil    -- ตัวเชื่อมต่อระบ
 local Settings = {
 	AimbotEnabled = false,
 	TargetPart = "Head",
-	TargetOffsetY = 0,    -- ค่าปรับความสูง/ต่ำของเป้าล็อก 3 มิติ
-	CrosshairOffsetY = 0, -- ค่าปรับเลื่อนเป้าแดงและ FOV บนหน้าจอ 2 มิติขึ้นลงตาม Height Offset
+	TargetOffsetY = 0,    -- ค่าปรับความสูง/ต่ำของเป้าล็อกในระดับ 3D (บวก = ขึ้น, ลบ = ลง)
 	TeamCheck = true,
 	WallCheck = true,
 	Smoothness = 0.35,
@@ -493,14 +492,6 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
--- ==================== ฟังก์ชันตำแหน่งศูนย์กลางจอและเป้าแดง ====================
-local function getAimCenterPosition()
-	local viewportSize = Camera.ViewportSize
-	local baseCenter = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
-	-- เลื่อนตำแหน่งขึ้น/ลงตามค่า Height Offset ที่ปรับ
-	return baseCenter - Vector2.new(0, Settings.CrosshairOffsetY * 30)
-end
-
 -- ==================== ระบบ Aimbot, FOV Circle & Crosshair Dot ====================
 local FOVCircle = Drawing.new("Circle")
 FOVCircle.Thickness = 1.0
@@ -518,6 +509,7 @@ CrosshairDot.Filled = true
 CrosshairDot.Color = Color3.fromRGB(255, 0, 0)
 CrosshairDot.Visible = Settings.ShowCrosshairDot
 
+-- คำนวณตำแหน่ง 3D โลกจริง (บวก TargetOffsetY เข้าไปในแกน Y ตรงๆ เพื่อให้สมบูรณ์ทั้งระยะใกล้-ไกล)
 local function getPredictedPosition(targetPart)
 	local currentPos = targetPart.Position + Vector3.new(0, Settings.TargetOffsetY, 0)
 	local velocity = targetPart.AssemblyLinearVelocity
@@ -532,7 +524,6 @@ end
 local function getClosestPlayer()
 	local closestPlayer = nil
 	local shortestDistance = Settings.FOVRadius
-	-- FOV ยึดตรงกลางจอเสมอ
 	local viewportSize = Camera.ViewportSize
 	local centerPos = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
 
@@ -546,12 +537,8 @@ local function getClosestPlayer()
 					continue
 				end
 
-				local base3DPos = targetPart.Position
-				if Settings.PredictionEnabled and targetPart.AssemblyLinearVelocity then
-					base3DPos = base3DPos + (targetPart.AssemblyLinearVelocity * Settings.PredictionFactor)
-				end
-
-				local screenPos, onScreen = Camera:WorldToViewportPoint(base3DPos)
+				local pred3DPos = getPredictedPosition(targetPart)
+				local screenPos, onScreen = Camera:WorldToViewportPoint(pred3DPos)
 
 				if onScreen then
 					local targetScreenPos = Vector2.new(screenPos.X, screenPos.Y)
@@ -579,16 +566,19 @@ local function getClosestPlayer()
 	return closestPlayer
 end
 
+-- วาดจุดเป้าแดงและวงกลม FOV ตรึงอยู่ตรงกลางจอแบบถาวร
 RunService.RenderStepped:Connect(function()
 	local viewportSize = Camera.ViewportSize
-	-- FOV อยู่กลางจอเสมอ
-	FOVCircle.Position = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
+	local centerScreen = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
+
+	-- FOV อยู่กลางจอ
+	FOVCircle.Position = centerScreen
 	FOVCircle.Radius = Settings.FOVRadius
 	FOVCircle.Visible = Settings.ShowFOV and Settings.AimbotEnabled
 	FOVCircle.Color = Settings.FOVColor
 
-	-- เป้าแดงอยู่กลางจอ และขยับสูง/ต่ำตามค่า Height Offset
-	CrosshairDot.Position = getAimCenterPosition()
+	-- เป้าแดงอยู่กลางจอถาวร (เป็นจุดอ้างอิงให้กระสุนพุ่งตรงจุดนี้)
+	CrosshairDot.Position = centerScreen
 	CrosshairDot.Visible = Settings.ShowCrosshairDot and Settings.AimbotEnabled
 end)
 
@@ -599,6 +589,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	end
 end)
 
+-- หันกล้องดึงเป้าหมายเข้ามาตรงกับจุดเป้าแดงกลางจอพอดี
 RunService.RenderStepped:Connect(function()
 	if Settings.AimbotEnabled then
 		local targetPlayer = getClosestPlayer()
@@ -724,7 +715,7 @@ CombatTab:Toggle({
 
 CombatTab:Toggle({
 	Title = "แสดงจุดเป้าแดงกลางจอ (Crosshair Dot)",
-	Desc = "จุดสีแดงกลางจอขยับสูง-ต่ำตามระดับความสูงเป้าล็อก",
+	Desc = "จุดสีแดงกลางจอแสดงตำแหน่งล็อกหลัก",
 	Icon = "dot",
 	Type = "Checkbox",
 	Value = Settings.ShowCrosshairDot,
@@ -781,7 +772,7 @@ CombatTab:Dropdown({
 
 CombatTab:Slider({
 	Title = "ปรับระดับความสูงเป้าล็อก (Height Offset)",
-	Desc = "ปรับขึ้น/ลง (เป้าแดงกลางจอจะขยับตามพร้อมกับการล็อก)",
+	Desc = "ปรับตำแหน่งเป้าล็อก 3D (ค่าลบ = ดึงเป้าลง, ค่าบวก = ดันเป้าขึ้น แม่นยำทุกระยะทาง)",
 	Step = 0.1,
 	Value = {
 		Min = -3,
@@ -790,7 +781,6 @@ CombatTab:Slider({
 	},
 	Callback = function(value)
 		Settings.TargetOffsetY = value
-		Settings.CrosshairOffsetY = value
 	end
 })
 
