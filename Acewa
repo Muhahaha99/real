@@ -388,7 +388,7 @@ local function startAutoSweepLoop()
 
 			local target = getSweepFloorPrompt()
 
-			if target and isAutoSweepActive me
+			if target and isAutoSweepActive then
 				runToPosition(target.Position, function() return isAutoSweepActive end)
 				if not isAutoSweepActive then 
 					disableNoclip()
