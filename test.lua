@@ -1,8 +1,5 @@
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 
-
-
-
 local Window = WindUI:CreateWindow({
     Title = "SON HUB",
     Icon = "user",
@@ -11,19 +8,17 @@ local Window = WindUI:CreateWindow({
     
     -- ส่วนของ Key System
     KeySystem = {    
-        Note = "กรุณาใส่คีย์เพื่อใช้งาน", -- ข้อความแนะนำที่จะแสดงให้ผู้ใช้เห็น
-        SaveKey = true, -- (แนะนำให้ใส่เพิ่ม) บันทึกคีย์อัตโนมัติ ไม่ต้องกรอกใหม่ทุกครั้งที่เข้าเกม
+        Note = "กรุณาใส่คีย์เพื่อใช้งาน",
+        SaveKey = true,
         API = {
             { 
                 Type = "platoboost",                                
-                ServiceId = 35489, -- service id
-                Secret = "4d904262-f21d-48d4-a65d-3f233856b7b8", -- platoboost secret
+                ServiceId = 35489,
+                Secret = "4d904262-f21d-48d4-a65d-3f233856b7b8",
             },                                                              
         },                                                              
     },
 })
-
-
 
 -- ==================== บริการและตัวแปรหลัก ====================
 local PathfindingService = game:GetService("PathfindingService")
@@ -446,7 +441,7 @@ local function startAutoSweepLoop()
 	end)
 end
 
--- ==================== ระบบ ESP ชื่อตามสีทีม ====================
+-- ==================== ระบบ ESP ชื่อตามสีทีม (ปรับความสูงขึ้น) ====================
 local espElements = {}
 
 local function createESP(p)
@@ -486,7 +481,8 @@ RunService.RenderStepped:Connect(function()
 			local hum = p.Character:FindFirstChildOfClass("Humanoid")
 
 			if hum.Health > 0 then
-				local headPos, onScreen = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 1.5, 0))
+				-- ปรับบวกแกน Y เพิ่มขึ้นจากเดิม (เช่น จาก 1.5 เป็น 2.5 หรือ 3.0) เพื่อให้ชื่อลอยสูงขึ้นเหนือหัว
+				local headPos, onScreen = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 2.8, 0))
 
 				if onScreen then
 					nameTag.Position = Vector2.new(headPos.X, headPos.Y)
@@ -661,18 +657,6 @@ aimbotButton.MouseButton1Click:Connect(function()
 		aimbotButton.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
 	end
 end)
-
-
-
--- -- ==================== การสร้าง UI Window (WindUI) ====================
--- local Window = WindUI:CreateWindow({
--- 	Title = "SON HUB",
--- 	Icon = "compass",
--- 	Author = "son studio",
--- })
-
-
-
 
 -- Tab 1: ฟาร์มหลัก
 local FarmTab = Window:Tab({
@@ -900,4 +884,3 @@ Window:EditOpenButton({
 	Enabled = true,
 	Draggable = true,
 })
-
