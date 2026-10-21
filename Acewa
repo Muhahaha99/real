@@ -16,6 +16,7 @@ local humanoid = character:WaitForChild("Humanoid")
 local rootPart = character:WaitForChild("HumanoidRootPart")
 local playerGui = player:WaitForChild("PlayerGui")
 local Camera = Workspace.CurrentCamera
+local Mouse = player:GetMouse()
 
 local isAutoFarmActive = false  -- สถานะเปิด/ปิด ฟาร์มเชื่อมเหล็ก
 local isAutoSweepActive = false -- สถานะเปิด/ปิด ฟาร์มกวาดพื้น
@@ -25,7 +26,8 @@ local noclipConnection = nil    -- ตัวเชื่อมต่อระบ
 local Settings = {
 	AimbotEnabled = false,
 	TargetPart = "Head",
-	TargetOffsetY = 0,    -- ค่าปรับความสูง/ต่ำของเป้าล็อกในระดับ 3D (บวก = ขึ้น, ลบ = ลง)
+	TargetOffsetY = 0,    -- ค่าปรับความสูง/ต่ำพื้นฐาน
+	AimCenter = "Cursor", -- เลือกได้ระหว่าง "Cursor" หรือ "Center Screen"
 	TeamCheck = true,
 	WallCheck = true,
 	Smoothness = 0.35,
@@ -492,6 +494,16 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
+-- ==================== ฟังก์ชันตำแหน่งศูนย์กลางของ FOV ====================
+local function getAimCenterPosition()
+	if Settings.AimCenter == "Center Screen" then
+		local viewportSize = Camera.ViewportSize
+		return Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
+	else
+		return Vector2.new(Mouse.X, Mouse.Y + 36)
+	end
+end
+
 -- ==================== ระบบ Aimbot, FOV Circle & Crosshair Dot ====================
 local FOVCircle = Drawing.new("Circle")
 FOVCircle.Thickness = 1.0
@@ -507,11 +519,13 @@ CrosshairDot.NumSides = 12
 CrosshairDot.Radius = 4.0
 CrosshairDot.Filled = true
 CrosshairDot.Color = Color3.fromRGB(255, 0, 0)
-CrosshairDot.Visible = Settings.ShowCrosshairDot
+CrosshairDot.Visible = false
 
--- คำนวณตำแหน่ง 3D โลกจริง (บวก TargetOffsetY เข้าไปในแกน Y ตรงๆ เพื่อให้สมบูรณ์ทั้งระยะใกล้-ไกล)
 local function getPredictedPosition(targetPart)
-	local currentPos = targetPart.Position + Vector3.new(0, Settings.TargetOffsetY, 0)
+	local distance = (Camera.CFrame.Position - targetPart.Position).Magnitude
+	local scaledOffset = Settings.TargetOffsetY * math.clamp(distance / 15, 0.2, 3.5)
+	
+	local currentPos = targetPart.Position + Vector3.new(0, scaledOffset, 0)
 	local velocity = targetPart.AssemblyLinearVelocity
 	
 	if Settings.PredictionEnabled and velocity then
@@ -524,8 +538,7 @@ end
 local function getClosestPlayer()
 	local closestPlayer = nil
 	local shortestDistance = Settings.FOVRadius
-	local viewportSize = Camera.ViewportSize
-	local centerPos = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
+	local centerPos = getAimCenterPosition()
 
 	for _, p in ipairs(Players:GetPlayers()) do
 		if p ~= player and p.Character and p.Character:FindFirstChild("Humanoid") then
@@ -537,8 +550,12 @@ local function getClosestPlayer()
 					continue
 				end
 
-				local pred3DPos = getPredictedPosition(targetPart)
-				local screenPos, onScreen = Camera:WorldToViewportPoint(pred3DPos)
+				local base3DPos = targetPart.Position
+				if Settings.PredictionEnabled and targetPart.AssemblyLinearVelocity then
+					base3DPos = base3DPos + (targetPart.AssemblyLinearVelocity * Settings.PredictionFactor)
+				end
+
+				local screenPos, onScreen = Camera:WorldToViewportPoint(base3DPos)
 
 				if onScreen then
 					local targetScreenPos = Vector2.new(screenPos.X, screenPos.Y)
@@ -566,20 +583,33 @@ local function getClosestPlayer()
 	return closestPlayer
 end
 
--- วาดจุดเป้าแดงและวงกลม FOV ตรึงอยู่ตรงกลางจอแบบถาวร
 RunService.RenderStepped:Connect(function()
-	local viewportSize = Camera.ViewportSize
-	local centerScreen = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
-
-	-- FOV อยู่กลางจอ
-	FOVCircle.Position = centerScreen
+	local centerPos = getAimCenterPosition()
+	
+	FOVCircle.Position = centerPos
 	FOVCircle.Radius = Settings.FOVRadius
 	FOVCircle.Visible = Settings.ShowFOV and Settings.AimbotEnabled
 	FOVCircle.Color = Settings.FOVColor
 
-	-- เป้าแดงอยู่กลางจอถาวร (เป็นจุดอ้างอิงให้กระสุนพุ่งตรงจุดนี้)
-	CrosshairDot.Position = centerScreen
-	CrosshairDot.Visible = Settings.ShowCrosshairDot and Settings.AimbotEnabled
+	if Settings.AimbotEnabled and Settings.ShowCrosshairDot then
+		local targetPlayer = getClosestPlayer()
+		if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild(Settings.TargetPart) then
+			local targetPart = targetPlayer.Character[Settings.TargetPart]
+			local target3DPos = getPredictedPosition(targetPart)
+			local screenPos, onScreen = Camera:WorldToViewportPoint(target3DPos)
+			
+			if onScreen then
+				CrosshairDot.Position = Vector2.new(screenPos.X, screenPos.Y)
+				CrosshairDot.Visible = true
+			else
+				CrosshairDot.Visible = false
+			end
+		else
+			CrosshairDot.Visible = false
+		end
+	else
+		CrosshairDot.Visible = false
+	end
 end)
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
@@ -589,7 +619,6 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	end
 end)
 
--- หันกล้องดึงเป้าหมายเข้ามาตรงกับจุดเป้าแดงกลางจอพอดี
 RunService.RenderStepped:Connect(function()
 	if Settings.AimbotEnabled then
 		local targetPlayer = getClosestPlayer()
@@ -714,8 +743,8 @@ CombatTab:Toggle({
 })
 
 CombatTab:Toggle({
-	Title = "แสดงจุดเป้าแดงกลางจอ (Crosshair Dot)",
-	Desc = "จุดสีแดงกลางจอแสดงตำแหน่งล็อกหลัก",
+	Title = "แสดงจุดเป้าแดงบนตัวคน",
+	Desc = "จุดสีแดงขยับติดอยู่บนหัว/ตัวเป้าหมาย (รองรับระยะไกล)",
 	Icon = "dot",
 	Type = "Checkbox",
 	Value = Settings.ShowCrosshairDot,
@@ -761,6 +790,16 @@ CombatTab:Slider({
 })
 
 CombatTab:Dropdown({
+	Title = "ตำแหน่งศูนย์กลางการเล็ง",
+	Desc = "เลือกคำนวณขอบเขตล็อกตาม Cursor หรือ กลางจอ",
+	Values = {"Cursor", "Center Screen"},
+	Value = "Cursor",
+	Callback = function(value)
+		Settings.AimCenter = value
+	end
+})
+
+CombatTab:Dropdown({
 	Title = "ส่วนที่ล็อก",
 	Desc = "เลือกชิ้นส่วนร่างกายที่จะล็อก",
 	Values = {"Head", "HumanoidRootPart"},
@@ -772,7 +811,7 @@ CombatTab:Dropdown({
 
 CombatTab:Slider({
 	Title = "ปรับระดับความสูงเป้าล็อก (Height Offset)",
-	Desc = "ปรับตำแหน่งเป้าล็อก 3D (ค่าลบ = ดึงเป้าลง, ค่าบวก = ดันเป้าขึ้น แม่นยำทุกระยะทาง)",
+	Desc = "ปรับขึ้น/ลง (เป้าแดงบนหัวคนจะขยับตามทุกระยะทาง)",
 	Step = 0.1,
 	Value = {
 		Min = -3,
@@ -800,7 +839,7 @@ CombatTab:Slider({
 
 CombatTab:Toggle({
 	Title = "แสดงวงกลม FOV",
-	Desc = "วงกลมขอบเขตการล็อกอยู่กลางจอ",
+	Desc = "วงกลมขอบเขตการล็อก",
 	Icon = "circle",
 	Type = "Checkbox",
 	Value = Settings.ShowFOV,
