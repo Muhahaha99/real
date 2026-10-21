@@ -1,0 +1,890 @@
+local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+
+-- ==================== บริการและตัวแปรหลัก ====================
+local PathfindingService = game:GetService("PathfindingService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local VirtualUser = game:GetService("VirtualUser")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local GuiService = game:GetService("GuiService")
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local rootPart = character:WaitForChild("HumanoidRootPart")
+local playerGui = player:WaitForChild("PlayerGui")
+local Camera = Workspace.CurrentCamera
+
+local isAutoFarmActive = false  -- สถานะเปิด/ปิด ฟาร์มเชื่อมเหล็ก
+local isAutoSweepActive = false -- สถานะเปิด/ปิด ฟาร์มกวาดพื้น
+local noclipConnection = nil    -- ตัวเชื่อมต่อระบบ Noclip
+
+-- ตั้งค่าระบบ Aimbot & ESP
+local Settings = {
+	AimbotEnabled = false,
+	TargetPart = "Head",
+	TeamCheck = true,
+	WallCheck = true,
+	Smoothness = 0.35,
+	
+	PredictionEnabled = false,
+	PredictionFactor = 0.06,
+	
+	ShowFOV = true,
+	FOVRadius = 70,
+	FOVColor = Color3.fromRGB(255, 255, 255),
+	
+	-- ตั้งค่า Crosshair เป้าแดง
+	ShowCrosshairDot = true,
+	
+	-- ตั้งค่า ESP Name
+	ESPNameEnabled = false,
+}
+
+local aimbotToggleKey = Enum.KeyCode.E -- ปุ่มคีย์ลัดเปิด/ปิด Aimbot บนคีย์บอร์ด
+
+-- Anti-AFK ป้องกันการโดนเตะ
+player.Idled:Connect(function()
+	if isAutoFarmActive or isAutoSweepActive then
+		VirtualUser:Button2Down(Vector2.new(0, 0), Workspace.CurrentCamera.CFrame)
+		task.wait(1)
+		VirtualUser:Button2Up(Vector2.new(0, 0), Workspace.CurrentCamera.CFrame)
+	end
+end)
+
+-- ฟังก์ชันเปิด/ปิด Noclip (เดินทะลุ)
+local function enableNoclip()
+	if not noclipConnection then
+		noclipConnection = RunService.Stepped:Connect(function()
+			local char = player.Character
+			if char and (isAutoFarmActive or isAutoSweepActive) then
+				for _, part in ipairs(char:GetChildren()) do
+					if part:IsA("BasePart") then
+						part.CanCollide = false
+					end
+				end
+			end
+		end)
+	end
+end
+
+local function disableNoclip()
+	if noclipConnection then
+		noclipConnection:Disconnect()
+		noclipConnection = nil
+	end
+	local char = player.Character
+	if char then
+		for _, part in ipairs(char:GetChildren()) do
+			if part:IsA("BasePart") then
+				part.CanCollide = true
+			end
+		end
+	end
+end
+
+-- ฟังก์ชันวิ่งไปยังตำแหน่งเป้าหมาย (เปิด Noclip + กด Shift)
+local function runToPosition(targetPosition, isActiveCheck)
+	enableNoclip()
+
+	local isRunning = true
+	task.spawn(function()
+		while isRunning and (isActiveCheck()) do
+			VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.LeftShift, false, game)
+			task.wait(0.2)
+		end
+		VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.LeftShift, false, game)
+	end)
+
+	local path = PathfindingService:CreatePath({
+		AgentRadius = 3,
+		AgentHeight = 5,
+		AgentCanJump = true
+	})
+
+	local success, err = pcall(function()
+		path:ComputeAsync(rootPart.Position, targetPosition)
+	end)
+
+	if success and path.Status == Enum.PathStatus.Success then
+		for _, waypoint in ipairs(path:GetWaypoints()) do
+			if not isActiveCheck() then break end
+			
+			if waypoint.Action == Enum.PathWaypointAction.Jump then
+				humanoid.Jump = true
+			end
+			
+			humanoid:MoveTo(waypoint.Position)
+			
+			local startTime = tick()
+			while (tick() - startTime) < 6 and isActiveCheck() do
+				if (rootPart.Position - waypoint.Position).Magnitude <= 5 then
+					break
+				end
+				task.wait(0.1)
+			end
+		end
+	else
+		humanoid:MoveTo(targetPosition)
+		local startTime = tick()
+		while (tick() - startTime) < 8 and isActiveCheck() do
+			if (rootPart.Position - targetPosition).Magnitude <= 5 then
+				break
+			end
+			task.wait(0.1)
+		end
+	end
+
+	isRunning = false
+	disableNoclip()
+end
+
+-- ==================== ฟังก์ชันเช็คหลอดทำงาน (เชื่อมเหล็ก) ====================
+local function waitForWorkingBarToDisappear(isActiveCheck)
+	task.wait(0.3)
+	local maxTimeout = 25
+	local startTime = tick()
+
+	while (tick() - startTime) < maxTimeout and isActiveCheck() do
+		local isWorkingBarFound = false
+
+		for _, guiObj in ipairs(playerGui:GetDescendants()) do
+			if guiObj:IsA("TextLabel") and guiObj.Visible and guiObj.Text then
+				if string.find(guiObj.Text, "กำลังทำงาน") or string.find(guiObj.Text, "working") then
+					isWorkingBarFound = true
+					break
+				end
+			end
+		end
+
+		if not isWorkingBarFound then
+			break
+		end
+
+		task.wait(0.2)
+	end
+end
+
+-- ==================== ระบบเชื่อมเหล็กอัตโนมัติ ====================
+local function getWeldingPrompt()
+	local closestPrompt = nil
+	local shortestDistance = math.huge
+
+	for _, prompt in ipairs(Workspace:GetDescendants()) do
+		if prompt:IsA("ProximityPrompt") and prompt.Enabled then
+			local isNPC = prompt:FindFirstAncestorOfClass("Model") and prompt:FindFirstAncestorOfClass("Model"):FindFirstChildOfClass("Humanoid")
+			
+			if not isNPC then
+				local actionText = prompt.ActionText:lower()
+				local objectText = prompt.ObjectText:lower()
+
+				local isNailPrompt = string.find(actionText, "hammer") or string.find(actionText, "nail") or 
+				                     string.find(objectText, "hammer") or string.find(objectText, "nail")
+
+				if not isNailPrompt then
+					if string.find(actionText, "welding") or string.find(actionText, "steel") or
+					   string.find(objectText, "welding") or string.find(objectText, "steel") then
+						
+						local parent = prompt.Parent
+						local promptWorldPos = nil
+
+						if parent:IsA("BasePart") then
+							promptWorldPos = parent.Position
+						elseif parent:IsA("Attachment") then
+							promptWorldPos = parent.WorldPosition
+						elseif parent:IsA("Model") and parent.PrimaryPart then
+							promptWorldPos = parent.PrimaryPart.Position
+						end
+
+						if promptWorldPos then
+							local distance = (rootPart.Position - promptWorldPos).Magnitude
+							if distance < shortestDistance then
+								shortestDistance = distance
+								closestPrompt = {
+									Prompt = prompt,
+									Position = promptWorldPos
+								}
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+
+	return closestPrompt
+end
+
+local function holdCurrentUI(holdSeconds)
+	local targetButton = nil
+
+	for _, button in ipairs(playerGui:GetDescendants()) do
+		if (button:IsA("ImageButton") or button:IsA("TextButton")) and button.Visible then
+			targetButton = button
+			break
+		end
+	end
+
+	local posX, posY = 0, 0
+	if targetButton then
+		posX = targetButton.AbsolutePosition.X + (targetButton.AbsoluteSize.X / 2)
+		posY = targetButton.AbsolutePosition.Y + (targetButton.AbsoluteSize.Y / 2)
+	else
+		local viewportSize = Camera.ViewportSize
+		posX = viewportSize.X / 2
+		posY = viewportSize.Y / 2
+	end
+
+	local startTime = tick()
+	local holdConnection
+	holdConnection = RunService.RenderStepped:Connect(function()
+		if not isAutoFarmActive or (tick() - startTime) >= holdSeconds then
+			if holdConnection then holdConnection:Disconnect() end
+			return
+		end
+
+		VirtualInputManager:SendMouseButtonEvent(posX, posY, 0, true, game, 0)
+	end)
+
+	while (tick() - startTime) < holdSeconds and isAutoFarmActive do
+		task.wait(0.1)
+	end
+
+	if holdConnection then holdConnection:Disconnect() end
+	VirtualInputManager:SendMouseButtonEvent(posX, posY, 0, false, game, 0)
+
+	return true
+end
+
+local function startAutoFarmLoop()
+	task.spawn(function()
+		while isAutoFarmActive do
+			character = player.Character or player.CharacterAdded:Wait()
+			humanoid = character:WaitForChild("Humanoid")
+			rootPart = character:WaitForChild("HumanoidRootPart")
+
+			local target = getWeldingPrompt()
+
+			if target and isAutoFarmActive then
+				runToPosition(target.Position, function() return isAutoFarmActive end)
+				if not isAutoFarmActive then 
+					disableNoclip()
+					break 
+				end
+				task.wait(0.3)
+
+				if fireproximityprompt then
+					fireproximityprompt(target.Prompt)
+				else
+					VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+					task.wait(0.1)
+					VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+				end
+
+				waitForWorkingBarToDisappear(function() return isAutoFarmActive end)
+
+				if isAutoFarmActive then
+					holdCurrentUI(11)
+				end
+
+				task.wait(2)
+			else
+				task.wait(3)
+			end
+		end
+		disableNoclip()
+	end)
+end
+
+-- ==================== ระบบกวาดพื้นอัตโนมัติ ====================
+local function getSweepFloorPrompt()
+	local closestPrompt = nil
+	local shortestDistance = math.huge
+
+	for _, prompt in ipairs(Workspace:GetDescendants()) do
+		if prompt:IsA("ProximityPrompt") and prompt.Enabled then
+			local isNPC = prompt:FindFirstAncestorOfClass("Model") and prompt:FindFirstAncestorOfClass("Model"):FindFirstChildOfClass("Humanoid")
+
+			if not isNPC then
+				local actionText = prompt.ActionText:lower()
+				local objectText = prompt.ObjectText:lower()
+
+				if string.find(actionText, "sweep") or string.find(actionText, "floor") or
+				   string.find(objectText, "sweep") or string.find(objectText, "floor") then
+
+					local parent = prompt.Parent
+					local promptWorldPos = nil
+
+					if parent:IsA("BasePart") then
+						promptWorldPos = parent.Position
+					elseif parent:IsA("Attachment") then
+						promptWorldPos = parent.WorldPosition
+					elseif parent:IsA("Model") and parent.PrimaryPart then
+						promptWorldPos = parent.PrimaryPart.Position
+					end
+
+					if promptWorldPos then
+						local distance = (rootPart.Position - promptWorldPos).Magnitude
+						if distance < shortestDistance then
+							shortestDistance = distance
+							closestPrompt = {
+								Prompt = prompt,
+								Position = promptWorldPos
+							}
+						end
+					end
+				end
+			end
+		end
+	end
+
+	return closestPrompt
+end
+
+local function holdAndDragSquare(duration)
+	local camera = Workspace.CurrentCamera
+	local viewportSize = camera.ViewportSize
+	local inset = GuiService:GetGuiInset()
+
+	local centerX = viewportSize.X * 0.50
+	local centerY = (viewportSize.Y * 0.49) + inset.Y
+	local radius = 80 
+	local startTime = tick()
+
+	local holdConnection
+	holdConnection = RunService.RenderStepped:Connect(function()
+		if not isAutoSweepActive or (tick() - startTime) >= duration then
+			if holdConnection then holdConnection:Disconnect() end
+			return
+		end
+		VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, true, game, 0)
+	end)
+
+	while (tick() - startTime) < duration and isAutoSweepActive do
+		VirtualInputManager:SendMouseMoveEvent(centerX - radius, centerY - radius, game)
+		task.wait(0.08)
+		VirtualInputManager:SendMouseMoveEvent(centerX + radius, centerY - radius, game)
+		task.wait(0.08)
+		VirtualInputManager:SendMouseMoveEvent(centerX + radius, centerY + radius, game)
+		task.wait(0.08)
+		VirtualInputManager:SendMouseMoveEvent(centerX - radius, centerY + radius, game)
+		task.wait(0.08)
+	end
+
+	if holdConnection then holdConnection:Disconnect() end
+	VirtualInputManager:SendMouseMoveEvent(centerX, centerY, game)
+	task.wait(0.05)
+	VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, false, game, 0)
+end
+
+local function startAutoSweepLoop()
+	task.spawn(function()
+		while isAutoSweepActive do
+			character = player.Character or player.CharacterAdded:Wait()
+			humanoid = character:WaitForChild("Humanoid")
+			rootPart = character:WaitForChild("HumanoidRootPart")
+
+			local target = getSweepFloorPrompt()
+
+			if target and isAutoSweepActive then
+				runToPosition(target.Position, function() return isAutoSweepActive end)
+				if not isAutoSweepActive then 
+					disableNoclip()
+					break 
+				end
+				task.wait(0.3)
+
+				if fireproximityprompt then
+					fireproximityprompt(target.Prompt)
+				else
+					VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+					task.wait(0.1)
+					VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+				end
+
+				local waitTime = 0
+				while waitTime < 11 and isAutoSweepActive do
+					task.wait(0.5)
+					waitTime = waitTime + 0.5
+				end
+
+				if isAutoSweepActive then
+					holdAndDragSquare(5)
+				end
+			else
+				task.wait(3)
+			end
+		end
+		disableNoclip()
+	end)
+end
+
+-- ==================== ระบบ ESP ชื่อตามสีทีม ====================
+local espElements = {}
+
+local function createESP(p)
+	local nameTag = Drawing.new("Text")
+	nameTag.Size = 16
+	nameTag.Center = true
+	nameTag.Outline = true
+	nameTag.OutlineColor = Color3.fromRGB(0, 0, 0)
+	nameTag.Visible = false
+
+	espElements[p] = nameTag
+end
+
+local function removeESP(p)
+	if espElements[p] then
+		espElements[p]:Remove()
+		espElements[p] = nil
+	end
+end
+
+for _, p in ipairs(Players:GetPlayers()) do
+	if p ~= player then createESP(p) end
+end
+
+Players.PlayerAdded:Connect(function(p)
+	if p ~= player then createESP(p) end
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+	removeESP(p)
+end)
+
+RunService.RenderStepped:Connect(function()
+	for p, nameTag in pairs(espElements) do
+		if Settings.ESPNameEnabled and p.Character and p.Character:FindFirstChild("Head") and p.Character:FindFirstChildOfClass("Humanoid") then
+			local head = p.Character.Head
+			local hum = p.Character:FindFirstChildOfClass("Humanoid")
+
+			if hum.Health > 0 then
+				local headPos, onScreen = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 1.5, 0))
+
+				if onScreen then
+					nameTag.Position = Vector2.new(headPos.X, headPos.Y)
+					nameTag.Text = p.DisplayName or p.Name
+					
+					if p.TeamColor then
+						local rawColor = p.TeamColor.Color
+						if rawColor.B > 0.4 and rawColor.R < 0.5 then
+							nameTag.Color = Color3.fromRGB(120, 200, 255)
+						else
+							nameTag.Color = rawColor
+						end
+					else
+						nameTag.Color = Color3.fromRGB(255, 255, 255)
+					end
+					
+					nameTag.Visible = true
+				else
+					nameTag.Visible = false
+				end
+			else
+				nameTag.Visible = false
+			end
+		else
+			nameTag.Visible = false
+		end
+	end
+end)
+
+-- ==================== ระบบ Aimbot, FOV Circle & Crosshair Dot มาตรฐาน ====================
+local FOVCircle = Drawing.new("Circle")
+FOVCircle.Thickness = 1.0
+FOVCircle.NumSides = 60
+FOVCircle.Radius = Settings.FOVRadius
+FOVCircle.Filled = false
+FOVCircle.Visible = Settings.ShowFOV
+FOVCircle.Color = Settings.FOVColor
+
+local CrosshairDot = Drawing.new("Circle")
+CrosshairDot.Thickness = 1.0
+CrosshairDot.NumSides = 12
+CrosshairDot.Radius = 4.0
+CrosshairDot.Filled = true
+CrosshairDot.Color = Color3.fromRGB(255, 0, 0)
+CrosshairDot.Visible = Settings.ShowCrosshairDot
+
+-- คำนวณตำแหน่งเป้าหมาย 3D มาตรฐาน
+local function getPredictedPosition(targetPart)
+	local currentPos = targetPart.Position
+	local velocity = targetPart.AssemblyLinearVelocity
+	
+	if Settings.PredictionEnabled and velocity then
+		return currentPos + (velocity * Settings.PredictionFactor)
+	end
+	
+	return currentPos
+end
+
+local function getClosestPlayer()
+	local closestPlayer = nil
+	local shortestDistance = Settings.FOVRadius
+	local viewportSize = Camera.ViewportSize
+	local centerPos = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
+
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= player and p.Character and p.Character:FindFirstChild("Humanoid") then
+			local humanoid = p.Character.Humanoid
+			local targetPart = p.Character:FindFirstChild(Settings.TargetPart)
+
+			if humanoid.Health > 0 and targetPart then
+				if Settings.TeamCheck and p.Team == player.Team then
+					continue
+				end
+
+				local target3DPos = getPredictedPosition(targetPart)
+				local screenPos, onScreen = Camera:WorldToViewportPoint(target3DPos)
+
+				if onScreen then
+					local targetScreenPos = Vector2.new(screenPos.X, screenPos.Y)
+					local distance = (targetScreenPos - centerPos).Magnitude
+
+					if distance < shortestDistance then
+						if Settings.WallCheck then
+							local ray = Ray.new(Camera.CFrame.Position, (targetPart.Position - Camera.CFrame.Position).Unit * 500)
+							local hit, pos = Workspace:FindPartOnRayWithIgnoreList(ray, {player.Character, Camera})
+							
+							if hit and hit:IsDescendantOf(p.Character) then
+								shortestDistance = distance
+								closestPlayer = p
+							end
+						else
+							shortestDistance = distance
+							closestPlayer = p
+						end
+					end
+				end
+			end
+		end
+	end
+
+	return closestPlayer
+end
+
+-- แสดงวงกลม FOV และเป้าแดงตรึงไว้กลางจอภาพถาวร
+RunService.RenderStepped:Connect(function()
+	local viewportSize = Camera.ViewportSize
+	local centerScreen = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
+
+	FOVCircle.Position = centerScreen
+	FOVCircle.Radius = Settings.FOVRadius
+	FOVCircle.Visible = Settings.ShowFOV and Settings.AimbotEnabled
+	FOVCircle.Color = Settings.FOVColor
+
+	CrosshairDot.Position = centerScreen
+	CrosshairDot.Visible = Settings.ShowCrosshairDot and Settings.AimbotEnabled
+end)
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if input.KeyCode == aimbotToggleKey then
+		Settings.AimbotEnabled = not Settings.AimbotEnabled
+	end
+end)
+
+-- ทำงานหันกล้องล็อกเป้าหมายมาตรฐาน
+RunService.RenderStepped:Connect(function()
+	if Settings.AimbotEnabled then
+		local targetPlayer = getClosestPlayer()
+		if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild(Settings.TargetPart) then
+			local targetPart = targetPlayer.Character[Settings.TargetPart]
+			local targetPos = getPredictedPosition(targetPart)
+			local cameraPos = Camera.CFrame.Position
+			
+			local targetCFrame = CFrame.new(cameraPos, targetPos)
+			Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, Settings.Smoothness)
+		end
+	end
+end)
+
+-- ==================== สร้าง Mobile GUI สำหรับเปิด/ปิด Aimbot ====================
+local mobileGui = Instance.new("ScreenGui")
+mobileGui.Name = "AimbotMobileGui"
+mobileGui.ResetOnSpawn = false
+mobileGui.Parent = playerGui
+
+local aimbotButton = Instance.new("TextButton")
+aimbotButton.Name = "AimbotToggleButton"
+aimbotButton.Size = UDim2.new(0, 110, 0, 45)
+aimbotButton.Position = UDim2.new(0.02, 0, 0.35, 0)
+aimbotButton.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
+aimbotButton.TextColor3 = Color3.fromRGB(255, 50, 50)
+aimbotButton.TextSize = 14
+aimbotButton.Font = Enum.Font.GothamBold
+aimbotButton.Text = "Aimbot: OFF"
+aimbotButton.Draggable = true
+aimbotButton.Active = true
+aimbotButton.Parent = mobileGui
+
+local uiCorner = Instance.new("UICorner")
+uiCorner.CornerRadius = UDim.new(0, 10)
+uiCorner.Parent = aimbotButton
+
+aimbotButton.MouseButton1Click:Connect(function()
+	Settings.AimbotEnabled = not Settings.AimbotEnabled
+	if Settings.AimbotEnabled then
+		aimbotButton.Text = "Aimbot: ON"
+		aimbotButton.TextColor3 = Color3.fromRGB(50, 255, 50)
+		aimbotButton.BackgroundColor3 = Color3.fromRGB(20, 60, 20)
+	else
+		aimbotButton.Text = "Aimbot: OFF"
+		aimbotButton.TextColor3 = Color3.fromRGB(255, 50, 50)
+		aimbotButton.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
+	end
+end)
+
+local Window = WindUI:CreateWindow({
+    -- ...
+    Folder = "MyScriptFolder", -- <--- เพิ่มบรรทัดนี้เข้าไป (เปลี่ยนชื่อเป็นอะไรก็ได้ที่เป็นตัวอักษรภาษาอังกฤษ)
+    KeySystem = {                                                   
+        Note = "Example Key System. With platoboost.",              
+        API = {                                                     
+            { -- PlatoBoost
+                Type = "platoboost",                                
+                ServiceId = 35489, -- service id
+                Secret = "4d904262-f21d-48d4-a65d-3f233856b7b8", -- platoboost secret
+            },                                                      
+        },                                                          
+    },                                                              
+})
+
+-- ==================== การสร้าง UI Window (WindUI) ====================
+local Window = WindUI:CreateWindow({
+	Title = "SON HUB",
+	Icon = "compass",
+	Author = "son studio",
+})
+
+
+
+
+-- Tab 1: ฟาร์มหลัก
+local FarmTab = Window:Tab({
+	Title = "ฟาร์มหลัก",
+	Icon = "house",
+	Locked = false,
+})
+
+FarmTab:Toggle({
+	Title = "เชื่อมเหล็กอัตโนมัติ",
+	Desc = "เชื่อมเหล็กเอง",
+	Icon = "check",
+	Type = "Checkbox",
+	Value = false,
+	Callback = function(state) 
+		isAutoFarmActive = state
+		if isAutoFarmActive then
+			startAutoFarmLoop()
+		else
+			disableNoclip()
+		end
+	end
+})
+
+FarmTab:Toggle({
+	Title = "กวาดพื้นอัตโนมัติ",
+	Desc = "กวาดพื้น",
+	Icon = "check",
+	Type = "Checkbox",
+	Value = false,
+	Callback = function(state) 
+		isAutoSweepActive = state
+		if isAutoSweepActive then
+			startAutoSweepLoop()
+		else
+			disableNoclip()
+		end
+	end
+})
+
+-- Tab 2: ระบบต่อสู้
+local CombatTab = Window:Tab({
+	Title = "ต่อสู้",
+	Icon = "crosshair",
+	Locked = false,
+})
+
+CombatTab:Toggle({
+	Title = "Aimbot",
+	Desc = "เปิด/ปิด ระบบล็อกเป้าอัตโนมัติ",
+	Icon = "target",
+	Type = "Checkbox",
+	Value = Settings.AimbotEnabled,
+	Callback = function(state)
+		Settings.AimbotEnabled = state
+		if state then
+			aimbotButton.Text = "Aimbot: ON"
+			aimbotButton.TextColor3 = Color3.fromRGB(50, 255, 50)
+			aimbotButton.BackgroundColor3 = Color3.fromRGB(20, 60, 20)
+		else
+			aimbotButton.Text = "Aimbot: OFF"
+			aimbotButton.TextColor3 = Color3.fromRGB(255, 50, 50)
+			aimbotButton.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
+		end
+	end
+})
+
+CombatTab:Toggle({
+	Title = "แสดงจุดเป้าแดงกลางจอ (Crosshair Dot)",
+	Desc = "จุดสีแดงตรงกลางจอภาพ",
+	Icon = "dot",
+	Type = "Checkbox",
+	Value = Settings.ShowCrosshairDot,
+	Callback = function(state)
+		Settings.ShowCrosshairDot = state
+	end
+})
+
+CombatTab:Toggle({
+	Title = "ESP แสดงชื่อผู้เล่น",
+	Desc = "แสดงชื่อผู้เล่นทะลุกำแพงตามสีทีม",
+	Icon = "user-check",
+	Type = "Checkbox",
+	Value = Settings.ESPNameEnabled,
+	Callback = function(state)
+		Settings.ESPNameEnabled = state
+	end
+})
+
+CombatTab:Toggle({
+	Title = "คาดการณ์การเคลื่อนไหว",
+	Desc = "ดักยิงหน้าคนที่กำลังวิ่ง",
+	Icon = "fast-forward",
+	Type = "Checkbox",
+	Value = Settings.PredictionEnabled,
+	Callback = function(state)
+		Settings.PredictionEnabled = state
+	end
+})
+
+CombatTab:Slider({
+	Title = "ระดับการคาดการณ์",
+	Desc = "ปรับความไกลในการดักหน้า (แนะนำ 0.01 - 0.15)",
+	Step = 0.01,
+	Value = {
+		Min = 0.01,
+		Max = 0.15,
+		Default = 0.06,
+	},
+	Callback = function(value)
+		Settings.PredictionFactor = value
+	end
+})
+
+CombatTab:Dropdown({
+	Title = "ส่วนที่ล็อก",
+	Desc = "เลือกชิ้นส่วนร่างกายที่จะล็อก",
+	Values = {"Head", "HumanoidRootPart"},
+	Value = "Head",
+	Callback = function(value)
+		Settings.TargetPart = value
+	end
+})
+
+CombatTab:Slider({
+	Title = "ความนุ่มนวล (ปรับเยอะระวังโดนเตะ)",
+	Desc = "ค่ามาก = ล็อกมาก",
+	Step = 0.05,
+	Value = {
+		Min = 0.1,
+		Max = 0.8,
+		Default = 0.35,
+	},
+	Callback = function(value)
+		Settings.Smoothness = value
+	end
+})
+
+CombatTab:Toggle({
+	Title = "แสดงวงกลม FOV",
+	Desc = "วงกลมขอบเขตการล็อกอยู่กลางจอ",
+	Icon = "circle",
+	Type = "Checkbox",
+	Value = Settings.ShowFOV,
+	Callback = function(state)
+		Settings.ShowFOV = state
+	end
+})
+
+CombatTab:Slider({
+	Title = "รัศมี FOV",
+	Desc = "ปรับขนาดวงกลมขอบเขตการล็อกเป้า",
+	Step = 1,
+	Value = {
+		Min = 20,
+		Max = 300,
+		Default = 70,
+	},
+	Callback = function(value)
+		Settings.FOVRadius = value
+	end
+})
+
+CombatTab:Toggle({
+	Title = "เช็คทีม (Team Check)",
+	Desc = "ไม่ล็อกทีมเดียวกัน",
+	Icon = "shield-check",
+	Type = "Checkbox",
+	Value = Settings.TeamCheck,
+	Callback = function(state)
+		Settings.TeamCheck = state
+	end
+})
+
+CombatTab:Toggle({
+	Title = "เช็คสิ่งกีดขวาง",
+	Desc = "ไม่ล็อกเป้าผ่านกำแพง",
+	Icon = "brick-wall",
+	Type = "Checkbox",
+	Value = Settings.WallCheck,
+	Callback = function(state)
+		Settings.WallCheck = state
+	end
+})
+
+-- Tab 3: ตั้งค่า
+local SettingsTab = Window:Tab({
+	Title = "ตั้งค่า",
+	Icon = "settings",
+	Locked = false,
+})
+
+SettingsTab:Keybind({
+	Title = "ปุ่มเปิด/ปิด Aimbot",
+	Desc = "กดปุ่มนี้เพื่อเปิดหรือปิดระบบ Aimbot",
+	Value = "E",
+	Callback = function(v)
+		pcall(function()
+			aimbotToggleKey = Enum.KeyCode[v]
+		end)
+	end
+})
+
+SettingsTab:Keybind({
+	Title = "ปุ่มเปิด/ปิด หน้าต่าง UI",
+	Desc = "กดปุ่มนี้เพื่อซ่อนหรือแสดงหน้าต่าง",
+	Value = "G",
+	Callback = function(v)
+		pcall(function()
+			Window:SetToggleKey(Enum.KeyCode[v])
+		end)
+	end
+})
+
+Window:EditOpenButton({
+	Title = "SON HUB",
+	Icon = "monitor",
+	CornerRadius = UDim.new(0,16),
+	StrokeThickness = 2,
+	Color = ColorSequence.new(
+		Color3.fromHex("FF0F7B"), 
+		Color3.fromHex("F89B29")
+	),
+	OnlyMobile = false,
+	Enabled = true,
+	Draggable = true,
+})
