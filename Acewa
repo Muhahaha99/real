@@ -722,7 +722,7 @@ CombatTab:Toggle({
 })
 
 CombatTab:Toggle({
-	Title = "ESP แสดงชื่อผู้เล่น (ตามสีทีม)",
+	Title = "ESP แสดงชื่อผู้เล่น",
 	Desc = "แสดงชื่อผู้เล่นทะลุกำแพงตามสีทีม",
 	Icon = "user-check",
 	Type = "Checkbox",
@@ -768,7 +768,7 @@ CombatTab:Dropdown({
 })
 
 CombatTab:Slider({
-	Title = "ความนุ่มนวล (Smoothness)",
+	Title = "ความนุ่มนวล (ปรับเยอะระวังโดนเตะ)",
 	Desc = "ค่ามาก = ล็อกมาก",
 	Step = 0.05,
 	Value = {
@@ -869,4 +869,4 @@ Window:EditOpenButton({
 	OnlyMobile = false,
 	Enabled = true,
 	Draggable = true,
-}) --
+})
