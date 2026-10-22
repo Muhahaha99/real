@@ -1,5 +1,25 @@
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 
+local Window = WindUI:CreateWindow({
+    Title = "SON HUB",
+    Icon = "user",
+    Author = "son studio",
+    Folder = "keyse",
+    
+    -- ส่วนของ Key System
+    KeySystem = {    
+        Note = "กรุณาใส่คีย์เพื่อใช้งาน",
+        SaveKey = true,
+        API = {
+            { 
+                Type = "platoboost",                                
+                ServiceId = 35489,
+                Secret = "4d904262-f21d-48d4-a65d-3f233856b7b8",
+            },                                                              
+        },                                                              
+    },
+})
+
 -- ==================== บริการและตัวแปรหลัก ====================
 local PathfindingService = game:GetService("PathfindingService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
@@ -17,9 +37,9 @@ local rootPart = character:WaitForChild("HumanoidRootPart")
 local playerGui = player:WaitForChild("PlayerGui")
 local Camera = Workspace.CurrentCamera
 
-local isAutoFarmActive = false  -- สถานะเปิด/ปิด ฟาร์มเชื่อมเหล็ก
-local isAutoSweepActive = false -- สถานะเปิด/ปิด ฟาร์มกวาดพื้น
-local noclipConnection = nil    -- ตัวเชื่อมต่อระบบ Noclip
+local isAutoFarmActive = false
+local isAutoSweepActive = false
+local noclipConnection = nil
 
 -- ตั้งค่าระบบ Aimbot & ESP
 local Settings = {
@@ -32,18 +52,20 @@ local Settings = {
 	PredictionEnabled = false,
 	PredictionFactor = 0.06,
 	
+	-- ⭐ เพิ่มระบบปรับความสูงจุดเล็ง
+	AimOffsetY = 0, 
+	
 	ShowFOV = true,
 	FOVRadius = 70,
 	FOVColor = Color3.fromRGB(255, 255, 255),
 	
-	-- ตั้งค่า Crosshair เป้าแดง
 	ShowCrosshairDot = true,
 	
-	-- ตั้งค่า ESP Name
 	ESPNameEnabled = false,
+	ESPHighlightEnabled = false,
 }
 
-local aimbotToggleKey = Enum.KeyCode.E -- ปุ่มคีย์ลัดเปิด/ปิด Aimbot บนคีย์บอร์ด
+local aimbotToggleKey = Enum.KeyCode.E
 
 -- Anti-AFK ป้องกันการโดนเตะ
 player.Idled:Connect(function()
@@ -85,7 +107,7 @@ local function disableNoclip()
 	end
 end
 
--- ฟังก์ชันวิ่งไปยังตำแหน่งเป้าหมาย (เปิด Noclip + กด Shift)
+-- ฟังก์ชันวิ่งไปยังตำแหน่งเป้าหมาย
 local function runToPosition(targetPosition, isActiveCheck)
 	enableNoclip()
 
@@ -141,7 +163,7 @@ local function runToPosition(targetPosition, isActiveCheck)
 	disableNoclip()
 end
 
--- ==================== ฟังก์ชันเช็คหลอดทำงาน (เชื่อมเหล็ก) ====================
+-- ==================== ฟาร์มเชื่อมเหล็ก ====================
 local function waitForWorkingBarToDisappear(isActiveCheck)
 	task.wait(0.3)
 	local maxTimeout = 25
@@ -149,7 +171,6 @@ local function waitForWorkingBarToDisappear(isActiveCheck)
 
 	while (tick() - startTime) < maxTimeout and isActiveCheck() do
 		local isWorkingBarFound = false
-
 		for _, guiObj in ipairs(playerGui:GetDescendants()) do
 			if guiObj:IsA("TextLabel") and guiObj.Visible and guiObj.Text then
 				if string.find(guiObj.Text, "กำลังทำงาน") or string.find(guiObj.Text, "working") then
@@ -158,54 +179,33 @@ local function waitForWorkingBarToDisappear(isActiveCheck)
 				end
 			end
 		end
-
-		if not isWorkingBarFound then
-			break
-		end
-
+		if not isWorkingBarFound then break end
 		task.wait(0.2)
 	end
 end
 
--- ==================== ระบบเชื่อมเหล็กอัตโนมัติ ====================
 local function getWeldingPrompt()
 	local closestPrompt = nil
 	local shortestDistance = math.huge
-
 	for _, prompt in ipairs(Workspace:GetDescendants()) do
 		if prompt:IsA("ProximityPrompt") and prompt.Enabled then
 			local isNPC = prompt:FindFirstAncestorOfClass("Model") and prompt:FindFirstAncestorOfClass("Model"):FindFirstChildOfClass("Humanoid")
-			
 			if not isNPC then
 				local actionText = prompt.ActionText:lower()
 				local objectText = prompt.ObjectText:lower()
-
-				local isNailPrompt = string.find(actionText, "hammer") or string.find(actionText, "nail") or 
-				                     string.find(objectText, "hammer") or string.find(objectText, "nail")
-
+				local isNailPrompt = string.find(actionText, "hammer") or string.find(actionText, "nail") or string.find(objectText, "hammer") or string.find(objectText, "nail")
 				if not isNailPrompt then
-					if string.find(actionText, "welding") or string.find(actionText, "steel") or
-					   string.find(objectText, "welding") or string.find(objectText, "steel") then
-						
+					if string.find(actionText, "welding") or string.find(actionText, "steel") or string.find(objectText, "welding") or string.find(objectText, "steel") then
 						local parent = prompt.Parent
 						local promptWorldPos = nil
-
-						if parent:IsA("BasePart") then
-							promptWorldPos = parent.Position
-						elseif parent:IsA("Attachment") then
-							promptWorldPos = parent.WorldPosition
-						elseif parent:IsA("Model") and parent.PrimaryPart then
-							promptWorldPos = parent.PrimaryPart.Position
-						end
-
+						if parent:IsA("BasePart") then promptWorldPos = parent.Position
+						elseif parent:IsA("Attachment") then promptWorldPos = parent.WorldPosition
+						elseif parent:IsA("Model") and parent.PrimaryPart then promptWorldPos = parent.PrimaryPart.Position end
 						if promptWorldPos then
 							local distance = (rootPart.Position - promptWorldPos).Magnitude
 							if distance < shortestDistance then
 								shortestDistance = distance
-								closestPrompt = {
-									Prompt = prompt,
-									Position = promptWorldPos
-								}
+								closestPrompt = { Prompt = prompt, Position = promptWorldPos }
 							end
 						end
 					end
@@ -213,30 +213,25 @@ local function getWeldingPrompt()
 			end
 		end
 	end
-
 	return closestPrompt
 end
 
 local function holdCurrentUI(holdSeconds)
 	local targetButton = nil
-
 	for _, button in ipairs(playerGui:GetDescendants()) do
 		if (button:IsA("ImageButton") or button:IsA("TextButton")) and button.Visible then
 			targetButton = button
 			break
 		end
 	end
-
 	local posX, posY = 0, 0
 	if targetButton then
 		posX = targetButton.AbsolutePosition.X + (targetButton.AbsoluteSize.X / 2)
 		posY = targetButton.AbsolutePosition.Y + (targetButton.AbsoluteSize.Y / 2)
 	else
-		local viewportSize = Camera.ViewportSize
-		posX = viewportSize.X / 2
-		posY = viewportSize.Y / 2
+		posX = Camera.ViewportSize.X / 2
+		posY = Camera.ViewportSize.Y / 2
 	end
-
 	local startTime = tick()
 	local holdConnection
 	holdConnection = RunService.RenderStepped:Connect(function()
@@ -244,17 +239,11 @@ local function holdCurrentUI(holdSeconds)
 			if holdConnection then holdConnection:Disconnect() end
 			return
 		end
-
 		VirtualInputManager:SendMouseButtonEvent(posX, posY, 0, true, game, 0)
 	end)
-
-	while (tick() - startTime) < holdSeconds and isAutoFarmActive do
-		task.wait(0.1)
-	end
-
+	while (tick() - startTime) < holdSeconds and isAutoFarmActive do task.wait(0.1) end
 	if holdConnection then holdConnection:Disconnect() end
 	VirtualInputManager:SendMouseButtonEvent(posX, posY, 0, false, game, 0)
-
 	return true
 end
 
@@ -264,31 +253,19 @@ local function startAutoFarmLoop()
 			character = player.Character or player.CharacterAdded:Wait()
 			humanoid = character:WaitForChild("Humanoid")
 			rootPart = character:WaitForChild("HumanoidRootPart")
-
 			local target = getWeldingPrompt()
-
 			if target and isAutoFarmActive then
 				runToPosition(target.Position, function() return isAutoFarmActive end)
-				if not isAutoFarmActive then 
-					disableNoclip()
-					break 
-				end
+				if not isAutoFarmActive then disableNoclip() break end
 				task.wait(0.3)
-
-				if fireproximityprompt then
-					fireproximityprompt(target.Prompt)
+				if fireproximityprompt then fireproximityprompt(target.Prompt)
 				else
 					VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
 					task.wait(0.1)
 					VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
 				end
-
 				waitForWorkingBarToDisappear(function() return isAutoFarmActive end)
-
-				if isAutoFarmActive then
-					holdCurrentUI(11)
-				end
-
+				if isAutoFarmActive then holdCurrentUI(11) end
 				task.wait(2)
 			else
 				task.wait(3)
@@ -298,48 +275,33 @@ local function startAutoFarmLoop()
 	end)
 end
 
--- ==================== ระบบกวาดพื้นอัตโนมัติ ====================
+-- ==================== ระบบกวาดพื้น ====================
 local function getSweepFloorPrompt()
 	local closestPrompt = nil
 	local shortestDistance = math.huge
-
 	for _, prompt in ipairs(Workspace:GetDescendants()) do
 		if prompt:IsA("ProximityPrompt") and prompt.Enabled then
 			local isNPC = prompt:FindFirstAncestorOfClass("Model") and prompt:FindFirstAncestorOfClass("Model"):FindFirstChildOfClass("Humanoid")
-
 			if not isNPC then
 				local actionText = prompt.ActionText:lower()
 				local objectText = prompt.ObjectText:lower()
-
-				if string.find(actionText, "sweep") or string.find(actionText, "floor") or
-				   string.find(objectText, "sweep") or string.find(objectText, "floor") then
-
+				if string.find(actionText, "sweep") or string.find(actionText, "floor") or string.find(objectText, "sweep") or string.find(objectText, "floor") then
 					local parent = prompt.Parent
 					local promptWorldPos = nil
-
-					if parent:IsA("BasePart") then
-						promptWorldPos = parent.Position
-					elseif parent:IsA("Attachment") then
-						promptWorldPos = parent.WorldPosition
-					elseif parent:IsA("Model") and parent.PrimaryPart then
-						promptWorldPos = parent.PrimaryPart.Position
-					end
-
+					if parent:IsA("BasePart") then promptWorldPos = parent.Position
+					elseif parent:IsA("Attachment") then promptWorldPos = parent.WorldPosition
+					elseif parent:IsA("Model") and parent.PrimaryPart then promptWorldPos = parent.PrimaryPart.Position end
 					if promptWorldPos then
 						local distance = (rootPart.Position - promptWorldPos).Magnitude
 						if distance < shortestDistance then
 							shortestDistance = distance
-							closestPrompt = {
-								Prompt = prompt,
-								Position = promptWorldPos
-							}
+							closestPrompt = { Prompt = prompt, Position = promptWorldPos }
 						end
 					end
 				end
 			end
 		end
 	end
-
 	return closestPrompt
 end
 
@@ -347,12 +309,10 @@ local function holdAndDragSquare(duration)
 	local camera = Workspace.CurrentCamera
 	local viewportSize = camera.ViewportSize
 	local inset = GuiService:GetGuiInset()
-
 	local centerX = viewportSize.X * 0.50
 	local centerY = (viewportSize.Y * 0.49) + inset.Y
 	local radius = 80 
 	local startTime = tick()
-
 	local holdConnection
 	holdConnection = RunService.RenderStepped:Connect(function()
 		if not isAutoSweepActive or (tick() - startTime) >= duration then
@@ -361,18 +321,12 @@ local function holdAndDragSquare(duration)
 		end
 		VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, true, game, 0)
 	end)
-
 	while (tick() - startTime) < duration and isAutoSweepActive do
-		VirtualInputManager:SendMouseMoveEvent(centerX - radius, centerY - radius, game)
-		task.wait(0.08)
-		VirtualInputManager:SendMouseMoveEvent(centerX + radius, centerY - radius, game)
-		task.wait(0.08)
-		VirtualInputManager:SendMouseMoveEvent(centerX + radius, centerY + radius, game)
-		task.wait(0.08)
-		VirtualInputManager:SendMouseMoveEvent(centerX - radius, centerY + radius, game)
-		task.wait(0.08)
+		VirtualInputManager:SendMouseMoveEvent(centerX - radius, centerY - radius, game) task.wait(0.08)
+		VirtualInputManager:SendMouseMoveEvent(centerX + radius, centerY - radius, game) task.wait(0.08)
+		VirtualInputManager:SendMouseMoveEvent(centerX + radius, centerY + radius, game) task.wait(0.08)
+		VirtualInputManager:SendMouseMoveEvent(centerX - radius, centerY + radius, game) task.wait(0.08)
 	end
-
 	if holdConnection then holdConnection:Disconnect() end
 	VirtualInputManager:SendMouseMoveEvent(centerX, centerY, game)
 	task.wait(0.05)
@@ -385,34 +339,23 @@ local function startAutoSweepLoop()
 			character = player.Character or player.CharacterAdded:Wait()
 			humanoid = character:WaitForChild("Humanoid")
 			rootPart = character:WaitForChild("HumanoidRootPart")
-
 			local target = getSweepFloorPrompt()
-
 			if target and isAutoSweepActive then
 				runToPosition(target.Position, function() return isAutoSweepActive end)
-				if not isAutoSweepActive then 
-					disableNoclip()
-					break 
-				end
+				if not isAutoSweepActive then disableNoclip() break end
 				task.wait(0.3)
-
-				if fireproximityprompt then
-					fireproximityprompt(target.Prompt)
+				if fireproximityprompt then fireproximityprompt(target.Prompt)
 				else
 					VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
 					task.wait(0.1)
 					VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
 				end
-
 				local waitTime = 0
 				while waitTime < 11 and isAutoSweepActive do
 					task.wait(0.5)
 					waitTime = waitTime + 0.5
 				end
-
-				if isAutoSweepActive then
-					holdAndDragSquare(5)
-				end
+				if isAutoSweepActive then holdAndDragSquare(5) end
 			else
 				task.wait(3)
 			end
@@ -421,8 +364,9 @@ local function startAutoSweepLoop()
 	end)
 end
 
--- ==================== ระบบ ESP ชื่อตามสีทีม ====================
+-- ==================== ระบบ ESP ====================
 local espElements = {}
+local highlightElements = {}
 
 local function createESP(p)
 	local nameTag = Drawing.new("Text")
@@ -431,67 +375,71 @@ local function createESP(p)
 	nameTag.Outline = true
 	nameTag.OutlineColor = Color3.fromRGB(0, 0, 0)
 	nameTag.Visible = false
-
 	espElements[p] = nameTag
 end
 
 local function removeESP(p)
-	if espElements[p] then
-		espElements[p]:Remove()
-		espElements[p] = nil
-	end
+	if espElements[p] then espElements[p]:Remove() espElements[p] = nil end
+	if highlightElements[p] then highlightElements[p]:Destroy() highlightElements[p] = nil end
 end
 
-for _, p in ipairs(Players:GetPlayers()) do
-	if p ~= player then createESP(p) end
-end
-
-Players.PlayerAdded:Connect(function(p)
-	if p ~= player then createESP(p) end
-end)
-
-Players.PlayerRemoving:Connect(function(p)
-	removeESP(p)
-end)
+for _, p in ipairs(Players:GetPlayers()) do if p ~= player then createESP(p) end end
+Players.PlayerAdded:Connect(function(p) if p ~= player then createESP(p) end end)
+Players.PlayerRemoving:Connect(function(p) removeESP(p) end)
 
 RunService.RenderStepped:Connect(function()
-	for p, nameTag in pairs(espElements) do
-		if Settings.ESPNameEnabled and p.Character and p.Character:FindFirstChild("Head") and p.Character:FindFirstChildOfClass("Humanoid") then
-			local head = p.Character.Head
-			local hum = p.Character:FindFirstChildOfClass("Humanoid")
-
-			if hum.Health > 0 then
-				local headPos, onScreen = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 1.5, 0))
-
-				if onScreen then
-					nameTag.Position = Vector2.new(headPos.X, headPos.Y)
-					nameTag.Text = p.DisplayName or p.Name
-					
-					if p.TeamColor then
-						local rawColor = p.TeamColor.Color
-						if rawColor.B > 0.4 and rawColor.R < 0.5 then
-							nameTag.Color = Color3.fromRGB(120, 200, 255)
-						else
-							nameTag.Color = rawColor
-						end
-					else
-						nameTag.Color = Color3.fromRGB(255, 255, 255)
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= player then
+			local teamColor = Color3.fromRGB(255, 255, 255)
+			if p.TeamColor then
+				local rawColor = p.TeamColor.Color
+				if rawColor.B > 0.4 and rawColor.R < 0.5 then teamColor = Color3.fromRGB(120, 200, 255)
+				else teamColor = rawColor end
+			end
+			local nameTag = espElements[p]
+			if nameTag then
+				if Settings.ESPNameEnabled and p.Character and p.Character:FindFirstChild("Head") and p.Character:FindFirstChildOfClass("Humanoid") then
+					local head = p.Character.Head
+					local hum = p.Character:FindFirstChildOfClass("Humanoid")
+					if hum.Health > 0 then
+						local headPos, onScreen = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 2.8, 0))
+						if onScreen then
+							nameTag.Position = Vector2.new(headPos.X, headPos.Y)
+							nameTag.Text = p.DisplayName or p.Name
+							nameTag.Color = teamColor
+							nameTag.Visible = true
+						else nameTag.Visible = false end
+					else nameTag.Visible = false end
+				else nameTag.Visible = false end
+			end
+			if Settings.ESPHighlightEnabled and p.Character and p.Character:FindFirstChildOfClass("Humanoid") then
+				local hum = p.Character:FindFirstChildOfClass("Humanoid")
+				if hum.Health > 0 then
+					local hl = highlightElements[p]
+					if not hl or hl.Parent ~= p.Character then
+						if hl then hl:Destroy() end
+						hl = Instance.new("Highlight")
+						hl.Name = "SonHub_Highlight"
+						hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+						hl.FillTransparency = 0.5
+						hl.OutlineTransparency = 0
+						hl.Parent = p.Character
+						highlightElements[p] = hl
 					end
-					
-					nameTag.Visible = true
+					hl.FillColor = teamColor
+					hl.OutlineColor = teamColor
+					hl.Enabled = true
 				else
-					nameTag.Visible = false
+					if highlightElements[p] then highlightElements[p].Enabled = false end
 				end
 			else
-				nameTag.Visible = false
+				if highlightElements[p] then highlightElements[p].Enabled = false end
 			end
-		else
-			nameTag.Visible = false
 		end
 	end
 end)
 
--- ==================== ระบบ Aimbot, FOV Circle & Crosshair Dot มาตรฐาน ====================
+-- ==================== ระบบ Aimbot & Crosshair ====================
 local FOVCircle = Drawing.new("Circle")
 FOVCircle.Thickness = 1.0
 FOVCircle.NumSides = 60
@@ -508,16 +456,17 @@ CrosshairDot.Filled = true
 CrosshairDot.Color = Color3.fromRGB(255, 0, 0)
 CrosshairDot.Visible = Settings.ShowCrosshairDot
 
--- คำนวณตำแหน่งเป้าหมาย 3D มาตรฐาน
+-- คำนวณตำแหน่งเป้าหมาย 3D + ความสูง Offset
 local function getPredictedPosition(targetPart)
 	local currentPos = targetPart.Position
 	local velocity = targetPart.AssemblyLinearVelocity
 	
 	if Settings.PredictionEnabled and velocity then
-		return currentPos + (velocity * Settings.PredictionFactor)
+		currentPos = currentPos + (velocity * Settings.PredictionFactor)
 	end
 	
-	return currentPos
+	-- ⭐ บวกความสูงที่ปรับได้ (Offset Y)
+	return currentPos + Vector3.new(0, Settings.AimOffsetY, 0)
 end
 
 local function getClosestPlayer()
@@ -532,9 +481,7 @@ local function getClosestPlayer()
 			local targetPart = p.Character:FindFirstChild(Settings.TargetPart)
 
 			if humanoid.Health > 0 and targetPart then
-				if Settings.TeamCheck and p.Team == player.Team then
-					continue
-				end
+				if Settings.TeamCheck and p.Team == player.Team then continue end
 
 				local target3DPos = getPredictedPosition(targetPart)
 				local screenPos, onScreen = Camera:WorldToViewportPoint(target3DPos)
@@ -545,10 +492,18 @@ local function getClosestPlayer()
 
 					if distance < shortestDistance then
 						if Settings.WallCheck then
-							local ray = Ray.new(Camera.CFrame.Position, (targetPart.Position - Camera.CFrame.Position).Unit * 500)
-							local hit, pos = Workspace:FindPartOnRayWithIgnoreList(ray, {player.Character, Camera})
+							-- ⭐ ใช้ RaycastParams แบบใหม่ที่แม่นยำกว่า FindPartOnRay มาก
+							local rayParams = RaycastParams.new()
+							rayParams.FilterType = Enum.RaycastFilterType.Exclude
+							rayParams.FilterDescendantsInstances = {player.Character, Camera}
+							rayParams.IgnoreWater = false
+							rayParams.RespectCanCollide = false
 							
-							if hit and hit:IsDescendantOf(p.Character) then
+							local rayOrigin = Camera.CFrame.Position
+							local rayDir = target3DPos - rayOrigin
+							local result = Workspace:Raycast(rayOrigin, rayDir, rayParams)
+							
+							if not result or result.Instance:IsDescendantOf(p.Character) then
 								shortestDistance = distance
 								closestPlayer = p
 							end
@@ -561,11 +516,10 @@ local function getClosestPlayer()
 			end
 		end
 	end
-
 	return closestPlayer
 end
 
--- แสดงวงกลม FOV และเป้าแดงตรึงไว้กลางจอภาพถาวร
+-- แสดงวงกลม FOV และจุดเป้าแดง (อัปเดตความสูงตาม AimOffsetY)
 RunService.RenderStepped:Connect(function()
 	local viewportSize = Camera.ViewportSize
 	local centerScreen = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
@@ -575,8 +529,22 @@ RunService.RenderStepped:Connect(function()
 	FOVCircle.Visible = Settings.ShowFOV and Settings.AimbotEnabled
 	FOVCircle.Color = Settings.FOVColor
 
-	CrosshairDot.Position = centerScreen
-	CrosshairDot.Visible = Settings.ShowCrosshairDot and Settings.AimbotEnabled
+	-- ⭐ อัปเดตจุดเป้าแดงให้ลอยขึ้น/ลงตาม AimOffsetY และระยะห่างจากกล้อง
+	if Settings.ShowCrosshairDot and Settings.AimbotEnabled then
+		-- คำนวณจุด 3D ล่วงหน้าจากกล้อง (10 studs ไปข้างหน้า) แล้วบวกค่าความสูง
+		local lookVector = Camera.CFrame.LookVector
+		local point3D = Camera.CFrame.Position + (lookVector * 10) + Vector3.new(0, Settings.AimOffsetY, 0)
+		local screenPos, onScreen = Camera:WorldToViewportPoint(point3D)
+		
+		if onScreen then
+			CrosshairDot.Position = Vector2.new(screenPos.X, screenPos.Y)
+			CrosshairDot.Visible = true
+		else
+			CrosshairDot.Visible = false
+		end
+	else
+		CrosshairDot.Visible = false
+	end
 end)
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
@@ -586,13 +554,13 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	end
 end)
 
--- ทำงานหันกล้องล็อกเป้าหมายมาตรฐาน
+-- ทำงานหันกล้องล็อกเป้าหมาย
 RunService.RenderStepped:Connect(function()
 	if Settings.AimbotEnabled then
 		local targetPlayer = getClosestPlayer()
 		if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild(Settings.TargetPart) then
 			local targetPart = targetPlayer.Character[Settings.TargetPart]
-			local targetPos = getPredictedPosition(targetPart)
+			local targetPos = getPredictedPosition(targetPart) -- ใช้ตำแหน่งที่บวก Offset แล้ว
 			local cameraPos = Camera.CFrame.Position
 			
 			local targetCFrame = CFrame.new(cameraPos, targetPos)
@@ -601,7 +569,7 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
--- ==================== สร้าง Mobile GUI สำหรับเปิด/ปิด Aimbot ====================
+-- ==================== สร้าง Mobile GUI ====================
 local mobileGui = Instance.new("ScreenGui")
 mobileGui.Name = "AimbotMobileGui"
 mobileGui.ResetOnSpawn = false
@@ -637,13 +605,6 @@ aimbotButton.MouseButton1Click:Connect(function()
 	end
 end)
 
--- ==================== การสร้าง UI Window (WindUI) ====================
-local Window = WindUI:CreateWindow({
-	Title = "SON HUB",
-	Icon = "compass",
-	Author = "son studio",
-})
-
 -- Tab 1: ฟาร์มหลัก
 local FarmTab = Window:Tab({
 	Title = "ฟาร์มหลัก",
@@ -659,11 +620,7 @@ FarmTab:Toggle({
 	Value = false,
 	Callback = function(state) 
 		isAutoFarmActive = state
-		if isAutoFarmActive then
-			startAutoFarmLoop()
-		else
-			disableNoclip()
-		end
+		if isAutoFarmActive then startAutoFarmLoop() else disableNoclip() end
 	end
 })
 
@@ -675,11 +632,7 @@ FarmTab:Toggle({
 	Value = false,
 	Callback = function(state) 
 		isAutoSweepActive = state
-		if isAutoSweepActive then
-			startAutoSweepLoop()
-		else
-			disableNoclip()
-		end
+		if isAutoSweepActive then startAutoSweepLoop() else disableNoclip() end
 	end
 })
 
@@ -710,6 +663,21 @@ CombatTab:Toggle({
 	end
 })
 
+-- ⭐ เพิ่มสไลเดอร์ปรับความสูงจุดเป้า
+CombatTab:Slider({
+	Title = "ปรับความสูงจุดเล็ง (Aim Height)",
+	Desc = "เลื่อนจุดเป้าแดงและจุดล็อกขึ้น/ลง (ค่าลบ = ต่ำลง)",
+	Step = 0.1,
+	Value = {
+		Min = -5,
+		Max = 10,
+		Default = 0,
+	},
+	Callback = function(value)
+		Settings.AimOffsetY = value
+	end
+})
+
 CombatTab:Toggle({
 	Title = "แสดงจุดเป้าแดงกลางจอ (Crosshair Dot)",
 	Desc = "จุดสีแดงตรงกลางจอภาพ",
@@ -727,9 +695,16 @@ CombatTab:Toggle({
 	Icon = "user-check",
 	Type = "Checkbox",
 	Value = Settings.ESPNameEnabled,
-	Callback = function(state)
-		Settings.ESPNameEnabled = state
-	end
+	Callback = function(state) Settings.ESPNameEnabled = state end
+})
+
+CombatTab:Toggle({
+	Title = "ESP Highlight ตามสีทีม",
+	Desc = "เรืองแสงตัวละครผู้เล่นทุกคนทะลุกำแพงตามสีทีม",
+	Icon = "eye",
+	Type = "Checkbox",
+	Value = Settings.ESPHighlightEnabled,
+	Callback = function(state) Settings.ESPHighlightEnabled = state end
 })
 
 CombatTab:Toggle({
@@ -738,9 +713,7 @@ CombatTab:Toggle({
 	Icon = "fast-forward",
 	Type = "Checkbox",
 	Value = Settings.PredictionEnabled,
-	Callback = function(state)
-		Settings.PredictionEnabled = state
-	end
+	Callback = function(state) Settings.PredictionEnabled = state end
 })
 
 CombatTab:Slider({
@@ -752,9 +725,7 @@ CombatTab:Slider({
 		Max = 0.15,
 		Default = 0.06,
 	},
-	Callback = function(value)
-		Settings.PredictionFactor = value
-	end
+	Callback = function(value) Settings.PredictionFactor = value end
 })
 
 CombatTab:Dropdown({
@@ -762,9 +733,7 @@ CombatTab:Dropdown({
 	Desc = "เลือกชิ้นส่วนร่างกายที่จะล็อก",
 	Values = {"Head", "HumanoidRootPart"},
 	Value = "Head",
-	Callback = function(value)
-		Settings.TargetPart = value
-	end
+	Callback = function(value) Settings.TargetPart = value end
 })
 
 CombatTab:Slider({
@@ -776,9 +745,7 @@ CombatTab:Slider({
 		Max = 0.8,
 		Default = 0.35,
 	},
-	Callback = function(value)
-		Settings.Smoothness = value
-	end
+	Callback = function(value) Settings.Smoothness = value end
 })
 
 CombatTab:Toggle({
@@ -787,9 +754,7 @@ CombatTab:Toggle({
 	Icon = "circle",
 	Type = "Checkbox",
 	Value = Settings.ShowFOV,
-	Callback = function(state)
-		Settings.ShowFOV = state
-	end
+	Callback = function(state) Settings.ShowFOV = state end
 })
 
 CombatTab:Slider({
@@ -801,9 +766,7 @@ CombatTab:Slider({
 		Max = 300,
 		Default = 70,
 	},
-	Callback = function(value)
-		Settings.FOVRadius = value
-	end
+	Callback = function(value) Settings.FOVRadius = value end
 })
 
 CombatTab:Toggle({
@@ -812,20 +775,16 @@ CombatTab:Toggle({
 	Icon = "shield-check",
 	Type = "Checkbox",
 	Value = Settings.TeamCheck,
-	Callback = function(state)
-		Settings.TeamCheck = state
-	end
+	Callback = function(state) Settings.TeamCheck = state end
 })
 
 CombatTab:Toggle({
-	Title = "เช็คสิ่งกีดขวาง",
+	Title = "เช็คสิ่งกีดขวาง (Wall Check)",
 	Desc = "ไม่ล็อกเป้าผ่านกำแพง",
 	Icon = "brick-wall",
 	Type = "Checkbox",
 	Value = Settings.WallCheck,
-	Callback = function(state)
-		Settings.WallCheck = state
-	end
+	Callback = function(state) Settings.WallCheck = state end
 })
 
 -- Tab 3: ตั้งค่า
@@ -840,9 +799,7 @@ SettingsTab:Keybind({
 	Desc = "กดปุ่มนี้เพื่อเปิดหรือปิดระบบ Aimbot",
 	Value = "E",
 	Callback = function(v)
-		pcall(function()
-			aimbotToggleKey = Enum.KeyCode[v]
-		end)
+		pcall(function() aimbotToggleKey = Enum.KeyCode[v] end)
 	end
 })
 
@@ -851,9 +808,7 @@ SettingsTab:Keybind({
 	Desc = "กดปุ่มนี้เพื่อซ่อนหรือแสดงหน้าต่าง",
 	Value = "G",
 	Callback = function(v)
-		pcall(function()
-			Window:SetToggleKey(Enum.KeyCode[v])
-		end)
+		pcall(function() Window:SetToggleKey(Enum.KeyCode[v]) end)
 	end
 })
 
