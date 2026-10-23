@@ -1,5 +1,25 @@
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 
+local Window = WindUI:CreateWindow({
+    Title = "SON HUB",
+    Icon = "user",
+    Author = "son studio",
+    Folder = "keyse",
+    
+    -- ส่วนของ Key System
+    KeySystem = {    
+        Note = "กรุณาใส่คีย์เพื่อใช้งาน",
+        SaveKey = true,
+        API = {
+            { 
+                Type = "platoboost",                                
+                ServiceId = 35489,
+                Secret = "4d904262-f21d-48d4-a65d-3f233856b7b8",
+            },                                                              
+        },                                                              
+    },
+})
+
 -- ==================== บริการและตัวแปรหลัก ====================
 local PathfindingService = game:GetService("PathfindingService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
@@ -16,17 +36,15 @@ local humanoid = character:WaitForChild("Humanoid")
 local rootPart = character:WaitForChild("HumanoidRootPart")
 local playerGui = player:WaitForChild("PlayerGui")
 local Camera = Workspace.CurrentCamera
-local Mouse = player:GetMouse()
 
 local isAutoFarmActive = false  -- สถานะเปิด/ปิด ฟาร์มเชื่อมเหล็ก
 local isAutoSweepActive = false -- สถานะเปิด/ปิด ฟาร์มกวาดพื้น
 local noclipConnection = nil    -- ตัวเชื่อมต่อระบบ Noclip
 
--- ตั้งค่าระบบ Aimbot & ESP
+-- ตั้งค่าระบบ Aimbot, Silent Aim & ESP
 local Settings = {
 	AimbotEnabled = false,
 	TargetPart = "Head",
-	AimCenter = "Cursor", -- "Cursor" หรือ "Center Screen"
 	TeamCheck = true,
 	WallCheck = true,
 	Smoothness = 0.35,
@@ -38,14 +56,20 @@ local Settings = {
 	FOVRadius = 70,
 	FOVColor = Color3.fromRGB(255, 255, 255),
 	
-	-- ตั้งค่า ESP Name
-	ESPNameEnabled = false,
+	-- ตั้งค่า Crosshair เป้าแดง
+	ShowCrosshairDot = true,
 	
-	AimKey = Enum.UserInputType.MouseButton2 -- คลิกขวาค้างเพื่อล็อก
+	-- ตั้งค่า ESP Name & Highlight
+	ESPNameEnabled = false,
+	ESPHighlightEnabled = false,
+
+	-- ตั้งค่า Silent Aim (GunGUI Crosshair)
+	SilentAimEnabled = false,
+	SilentOffsetX = 0,
+	SilentOffsetY = -50,
 }
 
-local isAiming = false
-local aimbotToggleKey = Enum.KeyCode.E -- ปุ่มคีย์ลัดเปิด/ปิด Aimbot
+local aimbotToggleKey = Enum.KeyCode.E -- ปุ่มคีย์ลัดเปิด/ปิด Aimbot บนคีย์บอร์ด
 
 -- Anti-AFK ป้องกันการโดนเตะ
 player.Idled:Connect(function()
@@ -423,8 +447,9 @@ local function startAutoSweepLoop()
 	end)
 end
 
--- ==================== ระบบ ESP ชื่อตามสีทีม ====================
+-- ==================== ระบบ ESP ชื่อ & Highlight แยกสีทีม ====================
 local espElements = {}
+local highlightElements = {}
 
 local function createESP(p)
 	local nameTag = Drawing.new("Text")
@@ -442,6 +467,10 @@ local function removeESP(p)
 		espElements[p]:Remove()
 		espElements[p] = nil
 	end
+	if highlightElements[p] then
+		highlightElements[p]:Destroy()
+		highlightElements[p] = nil
+	end
 end
 
 for _, p in ipairs(Players:GetPlayers()) do
@@ -457,53 +486,77 @@ Players.PlayerRemoving:Connect(function(p)
 end)
 
 RunService.RenderStepped:Connect(function()
-	for p, nameTag in pairs(espElements) do
-		if Settings.ESPNameEnabled and p.Character and p.Character:FindFirstChild("Head") and p.Character:FindFirstChildOfClass("Humanoid") then
-			local head = p.Character.Head
-			local hum = p.Character:FindFirstChildOfClass("Humanoid")
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= player then
+			local teamColor = Color3.fromRGB(255, 255, 255)
+			if p.TeamColor then
+				local rawColor = p.TeamColor.Color
+				if rawColor.B > 0.4 and rawColor.R < 0.5 then
+					teamColor = Color3.fromRGB(120, 200, 255)
+				else
+					teamColor = rawColor
+				end
+			end
 
-			if hum.Health > 0 then
-				local headPos, onScreen = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 1.5, 0))
+			-- อัปเดต ESP ชื่อ
+			local nameTag = espElements[p]
+			if nameTag then
+				if Settings.ESPNameEnabled and p.Character and p.Character:FindFirstChild("Head") and p.Character:FindFirstChildOfClass("Humanoid") then
+					local head = p.Character.Head
+					local hum = p.Character:FindFirstChildOfClass("Humanoid")
 
-				if onScreen then
-					nameTag.Position = Vector2.new(headPos.X, headPos.Y)
-					nameTag.Text = p.DisplayName or p.Name
-					
-					if p.TeamColor then
-						local rawColor = p.TeamColor.Color
-						if rawColor.B > 0.4 and rawColor.R < 0.5 then
-							nameTag.Color = Color3.fromRGB(120, 200, 255)
+					if hum.Health > 0 then
+						local headPos, onScreen = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 2.8, 0))
+
+						if onScreen then
+							nameTag.Position = Vector2.new(headPos.X, headPos.Y)
+							nameTag.Text = p.DisplayName or p.Name
+							nameTag.Color = teamColor
+							nameTag.Visible = true
 						else
-							nameTag.Color = rawColor
+							nameTag.Visible = false
 						end
 					else
-						nameTag.Color = Color3.fromRGB(255, 255, 255)
+						nameTag.Visible = false
 					end
-					
-					nameTag.Visible = true
 				else
 					nameTag.Visible = false
 				end
-			else
-				nameTag.Visible = false
 			end
-		else
-			nameTag.Visible = false
+
+			-- อัปเดต ESP Highlight ตามสีทีม
+			if Settings.ESPHighlightEnabled and p.Character and p.Character:FindFirstChildOfClass("Humanoid") then
+				local hum = p.Character:FindFirstChildOfClass("Humanoid")
+				if hum.Health > 0 then
+					local hl = highlightElements[p]
+					if not hl or hl.Parent ~= p.Character then
+						if hl then hl:Destroy() end
+						hl = Instance.new("Highlight")
+						hl.Name = "SonHub_Highlight"
+						hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+						hl.FillTransparency = 0.5
+						hl.OutlineTransparency = 0
+						hl.Parent = p.Character
+						highlightElements[p] = hl
+					end
+					hl.FillColor = teamColor
+					hl.OutlineColor = teamColor
+					hl.Enabled = true
+				else
+					if highlightElements[p] then
+						highlightElements[p].Enabled = false
+					end
+				end
+			else
+				if highlightElements[p] then
+					highlightElements[p].Enabled = false
+				end
+			end
 		end
 	end
 end)
 
--- ==================== ฟังก์ชันดึงจุดศูนย์กลางล็อก ====================
-local function getAimCenterPosition()
-	if Settings.AimCenter == "Center Screen" then
-		local viewportSize = Camera.ViewportSize
-		return Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
-	else
-		return Vector2.new(Mouse.X, Mouse.Y + 36)
-	end
-end
-
--- ==================== ระบบ Aimbot & FOV Circle ====================
+-- ==================== ระบบ Aimbot, FOV Circle & Crosshair Dot มาตรฐาน ====================
 local FOVCircle = Drawing.new("Circle")
 FOVCircle.Thickness = 1.0
 FOVCircle.NumSides = 60
@@ -512,13 +565,15 @@ FOVCircle.Filled = false
 FOVCircle.Visible = Settings.ShowFOV
 FOVCircle.Color = Settings.FOVColor
 
-RunService.RenderStepped:Connect(function()
-	FOVCircle.Position = getAimCenterPosition()
-	FOVCircle.Radius = Settings.FOVRadius
-	FOVCircle.Visible = Settings.ShowFOV and Settings.AimbotEnabled
-	FOVCircle.Color = Settings.FOVColor
-end)
+local CrosshairDot = Drawing.new("Circle")
+CrosshairDot.Thickness = 1.0
+CrosshairDot.NumSides = 12
+CrosshairDot.Radius = 4.0
+CrosshairDot.Filled = true
+CrosshairDot.Color = Color3.fromRGB(255, 0, 0)
+CrosshairDot.Visible = Settings.ShowCrosshairDot
 
+-- คำนวณตำแหน่งเป้าหมาย 3D มาตรฐาน
 local function getPredictedPosition(targetPart)
 	local currentPos = targetPart.Position
 	local velocity = targetPart.AssemblyLinearVelocity
@@ -533,7 +588,8 @@ end
 local function getClosestPlayer()
 	local closestPlayer = nil
 	local shortestDistance = Settings.FOVRadius
-	local centerPos = getAimCenterPosition()
+	local viewportSize = Camera.ViewportSize
+	local centerPos = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
 
 	for _, p in ipairs(Players:GetPlayers()) do
 		if p ~= player and p.Character and p.Character:FindFirstChild("Humanoid") then
@@ -545,8 +601,8 @@ local function getClosestPlayer()
 					continue
 				end
 
-				local predPos = getPredictedPosition(targetPart)
-				local screenPos, onScreen = Camera:WorldToViewportPoint(predPos)
+				local target3DPos = getPredictedPosition(targetPart)
+				local screenPos, onScreen = Camera:WorldToViewportPoint(target3DPos)
 
 				if onScreen then
 					local targetScreenPos = Vector2.new(screenPos.X, screenPos.Y)
@@ -554,10 +610,17 @@ local function getClosestPlayer()
 
 					if distance < shortestDistance then
 						if Settings.WallCheck then
-							local ray = Ray.new(Camera.CFrame.Position, (targetPart.Position - Camera.CFrame.Position).Unit * 500)
-							local hit, pos = Workspace:FindPartOnRayWithIgnoreList(ray, {player.Character, Camera})
-							
-							if hit and hit:IsDescendantOf(p.Character) then
+							local rayParams = RaycastParams.new()
+							rayParams.FilterType = Enum.RaycastFilterType.Exclude
+							rayParams.FilterDescendantsInstances = {player.Character, p.Character, Camera}
+							rayParams.IgnoreWater = false
+							rayParams.RespectCanCollide = false
+
+							local rayOrigin = Camera.CFrame.Position
+							local rayDir = targetPart.Position - rayOrigin
+							local result = Workspace:Raycast(rayOrigin, rayDir, rayParams)
+
+							if not result then
 								shortestDistance = distance
 								closestPlayer = p
 							end
@@ -574,26 +637,30 @@ local function getClosestPlayer()
 	return closestPlayer
 end
 
+-- แสดงวงกลม FOV และเป้าแดงตรึงไว้กลางจอภาพถาวร
+RunService.RenderStepped:Connect(function()
+	local viewportSize = Camera.ViewportSize
+	local centerScreen = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
+
+	FOVCircle.Position = centerScreen
+	FOVCircle.Radius = Settings.FOVRadius
+	FOVCircle.Visible = Settings.ShowFOV and (Settings.AimbotEnabled or Settings.SilentAimEnabled)
+	FOVCircle.Color = Settings.FOVColor
+
+	CrosshairDot.Position = centerScreen
+	CrosshairDot.Visible = Settings.ShowCrosshairDot and (Settings.AimbotEnabled or Settings.SilentAimEnabled)
+end)
+
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
-	
 	if input.KeyCode == aimbotToggleKey then
 		Settings.AimbotEnabled = not Settings.AimbotEnabled
 	end
-	
-	if input.UserInputType == Settings.AimKey or input.KeyCode == Settings.AimKey then
-		isAiming = true
-	end
 end)
 
-UserInputService.InputEnded:Connect(function(input)
-	if input.UserInputType == Settings.AimKey or input.KeyCode == Settings.AimKey then
-		isAiming = false
-	end
-end)
-
+-- ทำงานหันกล้องล็อกเป้าหมายมาตรฐาน
 RunService.RenderStepped:Connect(function()
-	if Settings.AimbotEnabled and isAiming then
+	if Settings.AimbotEnabled then
 		local targetPlayer = getClosestPlayer()
 		if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild(Settings.TargetPart) then
 			local targetPart = targetPlayer.Character[Settings.TargetPart]
@@ -606,6 +673,33 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
+-- ==================== ระบบ Silent Aim (ย้าย GunGUI Crosshair) ====================
+RunService.RenderStepped:Connect(function()
+	if not Settings.SilentAimEnabled then return end
+	
+	local targetPlayer = getClosestPlayer()
+	if not targetPlayer or not targetPlayer.Character then return end
+	
+	local targetPart = targetPlayer.Character:FindFirstChild(Settings.TargetPart)
+	if not targetPart then return end
+
+	local pGui = player:FindFirstChild("PlayerGui")
+	if not pGui then return end
+	
+	local gunGui = pGui:FindFirstChild("GunGUI") 
+	if not gunGui or not gunGui:FindFirstChild("Crosshair") then return end
+	
+	local crosshair = gunGui.Crosshair
+	local screenPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
+	
+	if onScreen then
+		local targetX = screenPos.X - (crosshair.AbsoluteSize.X / 2) + Settings.SilentOffsetX
+		local targetY = screenPos.Y - (crosshair.AbsoluteSize.Y / 2) + Settings.SilentOffsetY
+		
+		crosshair.Position = UDim2.new(0, targetX, 0, targetY)
+	end
+end)
+
 -- ==================== สร้าง Mobile GUI สำหรับเปิด/ปิด Aimbot ====================
 local mobileGui = Instance.new("ScreenGui")
 mobileGui.Name = "AimbotMobileGui"
@@ -615,43 +709,34 @@ mobileGui.Parent = playerGui
 local aimbotButton = Instance.new("TextButton")
 aimbotButton.Name = "AimbotToggleButton"
 aimbotButton.Size = UDim2.new(0, 110, 0, 45)
-aimbotButton.Position = UDim2.new(0.02, 0, 0.35, 0) -- อยู่ขอบซ้ายกลางจอ ย้ายตำแหน่งได้ตามสะดวก
-aimbotButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-aimbotButton.TextColor3 = Color3.fromRGB(255, 50, 50) -- เริ่มต้นสีแดง (ปิด)
+aimbotButton.Position = UDim2.new(0.02, 0, 0.35, 0)
+aimbotButton.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
+aimbotButton.TextColor3 = Color3.fromRGB(255, 50, 50)
 aimbotButton.TextSize = 14
 aimbotButton.Font = Enum.Font.GothamBold
 aimbotButton.Text = "Aimbot: OFF"
-aimbotButton.Draggable = true -- รองรับการลากเปลี่ยนตำแหน่งปุ่มบนจอมือถือ
+aimbotButton.Draggable = true
 aimbotButton.Active = true
 aimbotButton.Parent = mobileGui
 
--- มุมโค้งมนปุ่ม
 local uiCorner = Instance.new("UICorner")
 uiCorner.CornerRadius = UDim.new(0, 10)
 uiCorner.Parent = aimbotButton
 
--- ฟังก์ชันกดปุ่มสลับสถานะ Aimbot บนมือถือ
 aimbotButton.MouseButton1Click:Connect(function()
 	Settings.AimbotEnabled = not Settings.AimbotEnabled
 	if Settings.AimbotEnabled then
 		aimbotButton.Text = "Aimbot: ON"
-		aimbotButton.TextColor3 = Color3.fromRGB(50, 255, 50) -- สีเขียว (เปิด)
+		aimbotButton.TextColor3 = Color3.fromRGB(50, 255, 50)
 		aimbotButton.BackgroundColor3 = Color3.fromRGB(20, 60, 20)
 	else
 		aimbotButton.Text = "Aimbot: OFF"
-		aimbotButton.TextColor3 = Color3.fromRGB(255, 50, 50) -- สีแดง (ปิด)
+		aimbotButton.TextColor3 = Color3.fromRGB(255, 50, 50)
 		aimbotButton.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
 	end
 end)
 
--- ==================== การสร้าง UI Window (WindUI) ====================
-local Window = WindUI:CreateWindow({
-	Title = "SON HUB",
-	Icon = "compass",
-	Author = "son studio",
-})
-
--- Tab 1: ฟาร์มหลัก (เชื่อมเหล็ก & กวาดพื้น)
+-- Tab 1: ฟาร์มหลัก
 local FarmTab = Window:Tab({
 	Title = "ฟาร์มหลัก",
 	Icon = "house",
@@ -690,7 +775,7 @@ FarmTab:Toggle({
 	end
 })
 
--- Tab 2: ระบบต่อสู้ (Combat & FOV Settings)
+-- Tab 2: ระบบต่อสู้
 local CombatTab = Window:Tab({
 	Title = "ต่อสู้",
 	Icon = "crosshair",
@@ -698,19 +783,78 @@ local CombatTab = Window:Tab({
 })
 
 CombatTab:Toggle({
-	Title = "Aimbot",
-	Desc = "กดคลิกขวาค้างเพื่อล็อก",
+	Title = "Aimbot (หมุนกล้อง)",
+	Desc = "เปิด/ปิด ระบบล็อกเป้าแบบหมุนกล้อง",
 	Icon = "target",
 	Type = "Checkbox",
 	Value = Settings.AimbotEnabled,
 	Callback = function(state)
 		Settings.AimbotEnabled = state
+		if state then
+			aimbotButton.Text = "Aimbot: ON"
+			aimbotButton.TextColor3 = Color3.fromRGB(50, 255, 50)
+			aimbotButton.BackgroundColor3 = Color3.fromRGB(20, 60, 20)
+		else
+			aimbotButton.Text = "Aimbot: OFF"
+			aimbotButton.TextColor3 = Color3.fromRGB(255, 50, 50)
+			aimbotButton.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
+		end
 	end
 })
 
 CombatTab:Toggle({
-	Title = "ESP แสดงชื่อผู้เล่น (ตามสีทีม)",
-	Desc = "แสดงชื่อผู้เล่น",
+	Title = "Silent Aim (ย้าย GunGUI Crosshair)",
+	Desc = "เปิด/ปิด ดึงเป้า GunGUI ไปหาหัวเป้าหมาย",
+	Icon = "crosshair",
+	Type = "Checkbox",
+	Value = Settings.SilentAimEnabled,
+	Callback = function(state)
+		Settings.SilentAimEnabled = state
+	end
+})
+
+CombatTab:Slider({
+	Title = "Silent Aim Offset X",
+	Desc = "ปรับเป้าปืน ซ้าย-ขวา",
+	Step = 1,
+	Value = {
+		Min = -100,
+		Max = 100,
+		Default = 0,
+	},
+	Callback = function(value)
+		Settings.SilentOffsetX = value
+	end
+})
+
+CombatTab:Slider({
+	Title = "Silent Aim Offset Y",
+	Desc = "ปรับเป้าปืน ขึ้น-ลง",
+	Step = 1,
+	Value = {
+		Min = -150,
+		Max = 100,
+		Default = -50,
+	},
+	Callback = function(value)
+		Settings.SilentOffsetY = value
+	end
+})
+
+CombatTab:Toggle({
+	Title = "แสดงจุดเป้าแดงกลางจอ (Crosshair Dot)",
+	Desc = "จุดสีแดงตรงกลางจอภาพ",
+	Icon = "dot",
+	Type = "Checkbox",
+	Value = Settings.ShowCrosshairDot,
+	Callback = function(state)
+		Settings.ShowCrosshairDot = state
+	end
+})
+
+CombatTab:Toggle({
+	Title = "ESP แสดงชื่อผู้เล่น",
+	Desc = "แสดงชื่อผู้เล่นทะลุกำแพงตามสีทีม",
 	Icon = "user-check",
 	Type = "Checkbox",
 	Value = Settings.ESPNameEnabled,
@@ -720,8 +864,19 @@ CombatTab:Toggle({
 })
 
 CombatTab:Toggle({
+	Title = "ESP Highlight ตามสีทีม",
+	Desc = "เรืองแสงตัวละครผู้เล่นทุกคนทะลุกำแพงตามสีทีม",
+	Icon = "eye",
+	Type = "Checkbox",
+	Value = Settings.ESPHighlightEnabled,
+	Callback = function(state)
+		Settings.ESPHighlightEnabled = state
+	end
+})
+
+CombatTab:Toggle({
 	Title = "คาดการณ์การเคลื่อนไหว",
-	Desc = "ดักยิงหน้าคนที่กำลังวิ่งเนียนๆ",
+	Desc = "ดักยิงหน้าคนที่กำลังวิ่ง",
 	Icon = "fast-forward",
 	Type = "Checkbox",
 	Value = Settings.PredictionEnabled,
@@ -744,11 +899,10 @@ CombatTab:Slider({
 	end
 })
 
-
 CombatTab:Dropdown({
-	Title = "ตำแหน่งที่ล็อก",
+	Title = "ส่วนที่ล็อก",
 	Desc = "เลือกชิ้นส่วนร่างกายที่จะล็อก",
-	Values = {"Head", "HumanoidRootPart"},
+	Values = {"Head", "HumanoidRootPart", "UpperTorso"},
 	Value = "Head",
 	Callback = function(value)
 		Settings.TargetPart = value
@@ -756,7 +910,7 @@ CombatTab:Dropdown({
 })
 
 CombatTab:Slider({
-	Title = "ความนุ่มนวล (Smoothness)",
+	Title = "ความนุ่มนวล (ปรับเยอะระวังโดนเตะ)",
 	Desc = "ค่ามาก = ล็อกมาก",
 	Step = 0.05,
 	Value = {
@@ -771,7 +925,7 @@ CombatTab:Slider({
 
 CombatTab:Toggle({
 	Title = "แสดงวงกลม FOV",
-	Desc = "วงกลมขอบเขตการล็อก",
+	Desc = "วงกลมขอบเขตการล็อกอยู่กลางจอ",
 	Icon = "circle",
 	Type = "Checkbox",
 	Value = Settings.ShowFOV,
@@ -786,7 +940,7 @@ CombatTab:Slider({
 	Step = 1,
 	Value = {
 		Min = 20,
-		Max = 300,
+		Max = 500,
 		Default = 70,
 	},
 	Callback = function(value)
@@ -816,7 +970,7 @@ CombatTab:Toggle({
 	end
 })
 
--- Tab 3: ตั้งค่า (Settings - รวมปุ่ม Keybind ต่างๆ)
+-- Tab 3: ตั้งค่า
 local SettingsTab = Window:Tab({
 	Title = "ตั้งค่า",
 	Icon = "settings",
@@ -825,7 +979,7 @@ local SettingsTab = Window:Tab({
 
 SettingsTab:Keybind({
 	Title = "ปุ่มเปิด/ปิด Aimbot",
-	Desc = "กดปุ่มนี้บนคีย์บอร์ดเพื่อเปิด/ปิด Aimbot ด่วน",
+	Desc = "กดปุ่มนี้เพื่อเปิดหรือปิดระบบ Aimbot",
 	Value = "E",
 	Callback = function(v)
 		pcall(function()
